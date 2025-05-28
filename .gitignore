@@ -30,3 +30,4 @@ dist/
 .history/
 *.env
 .env.local
+/generated/prisma

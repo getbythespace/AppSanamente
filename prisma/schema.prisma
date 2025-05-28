@@ -1,0 +1,57 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  ADMIN
+  PSYCHOLOGIST
+  PATIENT
+}
+
+model User {
+  id                       String        @id @default(cuid())
+  clerkUserId              String        @unique
+  rut                      String        @unique
+  name                     String
+  age                      Int?
+  role                     Role          @default(PATIENT)
+  isPsychologist           Boolean       @default(false)
+  organizationId           String?
+  organization             Organization? @relation(fields: [organizationId], references: [id])
+  // Relación paciente–psicólogo
+  patients                 User[]        @relation("PsychologistPatients")
+  assignedPsychologistId   String?
+  psychologist             User?         @relation("PsychologistPatients", fields: [assignedPsychologistId], references: [id])
+  // Entradas de ánimo (solo para pacientes)
+  entries                  Entry[]
+  createdAt                DateTime      @default(now())
+  updatedAt                DateTime      @updatedAt
+}
+
+model Organization {
+  id         String   @id @default(cuid())
+  name       String
+  rut        String   @unique
+  users      User[]
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Entry {
+  id         String   @id @default(cuid())
+  patient    User     @relation(fields: [patientId], references: [id])
+  patientId  String
+  score      Int      // 1–10
+  comment    String?
+  date       DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([patientId, date]) // Solo una entrada por paciente y día
+}
