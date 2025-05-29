@@ -1,137 +1,237 @@
-import React, { useState, FormEvent } from 'react';
-import { useRouter } from 'next/router';
-import Layout from '../../components/Layout'; // RUTA LAYOUT
-import { signUp } from './auth'; // RUTA MODULO AUTH
-// IMPORTAR USE AUTH
+import React, { useState, FormEvent } from 'react'
+import { useRouter } from 'next/router'
+import Layout from '../../components/Layout'
+import { signUp, signOut } from './auth'
+
+const nameRe = /^[A-Za-zÁÉÍÓÚáéíóúñÑ\s]+$/
+function isValidRut(rut: string) {
+  const clean = rut.replace(/[^0-9kK]/g, '').toUpperCase()
+  return clean.length > 7
+}
 
 const RegisterPage = () => {
-  const router = useRouter();
-  // IMPLEMENTAR AUTHCONTEXT PARA LOGIN
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  // AGREGAR CAMPOS, EDAD, RUT, NOMBRE, ETC. 
-  // AGREGAR ESTADO PARA USUARIO, ROL, ETC.
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const router = useRouter()
 
-  const handleSubmit = async (event: FormEvent) => {
-    event.preventDefault();
-    setError(null);
+  const [firstName, setFirstName] = useState('')
+  const [lastNameP, setLastNameP] = useState('')
+  const [lastNameM, setLastNameM] = useState('')
+  const [rut, setRut] = useState('')
+  const [dob, setDob] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [registerOrg, setRegisterOrg] = useState(false)
+  const [orgName, setOrgName] = useState('')
+  const [orgRut, setOrgRut] = useState('')
+  const [isPsychologist, setIsPsychologist] = useState(false)
 
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault()
+    setError(null)
+
+    if (![firstName, lastNameP, lastNameM].every(n => nameRe.test(n))) {
+      setError('Los nombres sólo pueden tener letras y espacios.')
+      return
+    }
+    if (!isValidRut(rut)) {
+      setError('RUT inválido.')
+      return
+    }
+    if (dob && new Date(dob) >= new Date()) {
+      setError('Fecha de nacimiento inválida.')
+      return
+    }
+    if (!/\S+@\S+\.\S+/.test(email)) {
+      setError('Correo electrónico inválido.')
+      return
+    }
     if (password !== confirmPassword) {
-      setError('Las contraseñas no coinciden.');
-      return;
+      setError('Las contraseñas no coinciden.')
+      return
     }
 
-    setLoading(true);
+    setLoading(true)
+    const role = registerOrg || isPsychologist ? 'ADMIN' : 'PATIENT'
+    const metadata: any = {
+      firstName,
+      lastNamePaternal: lastNameP,
+      lastNameMaternal: lastNameM,
+      dob: dob || null,
+      rut,
+      role,
+      isPsychologist
+    }
+    if (registerOrg) {
+      metadata.orgName = orgName
+      metadata.orgRut = orgRut
+    }
 
-    // IMPLEMENTAR FORMULARIO DE DATOS
-    // DEFINIR ROL INICIAL SEGUN FLUJO
-    // PARA REGISTRO DE ORGANIZACIONES (MAS COMPLEJO) USAR BACKEND PURO
-    const { user, session, error: signUpError } = await signUp({
+    const { error: signUpError } = await signUp({
       email,
       password,
- //PEDIR FULL NAME Y ROL DEFAULT
-    });
-
-    setLoading(false);
-
+      options: { data: metadata }
+    })
+    setLoading(false)
     if (signUpError) {
-      setError(signUpError.message || 'Error al registrar la cuenta. Inténtalo de nuevo.');
-      return;
+      setError(signUpError.message)
+      return
     }
-
-    if (user && session) {
-      console.log('Registration successful:', user);
-      // Aquí podrías usar un AuthContext para guardar el estado del usuario globalmente
-      // await login(user, session); // Ejemplo con AuthContext
-      // Idealmente, después del registro, el usuario también inicia sesión.
-      // Supabase maneja esto automáticamente con signUp si la confirmación de email no está habilitada o ya fue hecha.
-      alert('¡Registro exitoso! Serás redirigido al panel.'); // O un mensaje más elegante
-      router.push('/dashboard'); // Redirige a un dashboard genérico por ahora
-    }
-  };
+    await signOut()
+    router.push('/auth/login')
+  }
 
   return (
-    <Layout title="Registrarse - App Sanamente">
-      <div className="flex justify-center items-center py-10">
-        <div className="w-full max-w-md p-8 space-y-6 bg-white rounded-lg shadow-md">
-          <h2 className="text-2xl font-bold text-center text-gray-900">Crear Cuenta</h2>
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Aquí podrías añadir campos como Nombre, RUT, etc. */}
-            {/* Ejemplo:
-            <div>
-              <label htmlFor="name" className="block text-sm font-medium text-gray-700">Nombre Completo</label>
-              <input id="name" name="name" type="text" required value={name} onChange={(e) => setName(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" />
-            </div>
-            */}
-            <div>
-              <label htmlFor="email-register" className="block text-sm font-medium text-gray-700">
-                Correo Electrónico
-              </label>
-              <input
-                id="email-register"
-                name="email"
-                type="email"
-                autoComplete="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-              />
-            </div>
-            <div>
-              <label htmlFor="password-register" className="block text-sm font-medium text-gray-700">
-                Contraseña
-              </label>
-              <input
-                id="password-register"
-                name="password"
-                type="password"
-                autoComplete="new-password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-              />
-            </div>
-            <div>
-              <label htmlFor="confirm-password" className="block text-sm font-medium text-gray-700">
-                Confirmar Contraseña
-              </label>
-              <input
-                id="confirm-password"
-                name="confirmPassword"
-                type="password"
-                autoComplete="new-password"
-                required
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-              />
-            </div>
-            {error && <p className="text-sm text-red-600">{error}</p>}
-            <div>
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-              >
-                {loading ? 'Registrando...' : 'Registrarse'}
-              </button>
-            </div>
-          </form>
-          <p className="text-sm text-center text-gray-600">
-            ¿Ya tienes una cuenta?{' '}
-            <a href="/auth/login" className="font-medium text-blue-600 hover:text-blue-500">
-              Inicia Sesión
-            </a>
-          </p>
-        </div>
+    <Layout title="Registrarse – App Sanamente">
+      <div className="max-w-md mx-auto py-10">
+        <h2 className="text-2xl font-bold mb-6">Crear Cuenta</h2>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Nombre */}
+          <div>
+            <label className="block text-sm">Nombre</label>
+            <input
+              type="text"
+              value={firstName}
+              onChange={e => setFirstName(e.target.value)}
+              required
+              className="mt-1 w-full px-3 py-2 border rounded"
+            />
+          </div>
+          {/* Apellido Paterno */}
+          <div>
+            <label className="block text-sm">Apellido Paterno</label>
+            <input
+              type="text"
+              value={lastNameP}
+              onChange={e => setLastNameP(e.target.value)}
+              required
+              className="mt-1 w-full px-3 py-2 border rounded"
+            />
+          </div>
+          {/* Apellido Materno */}
+          <div>
+            <label className="block text-sm">Apellido Materno</label>
+            <input
+              type="text"
+              value={lastNameM}
+              onChange={e => setLastNameM(e.target.value)}
+              required
+              className="mt-1 w-full px-3 py-2 border rounded"
+            />
+          </div>
+          {/* RUT */}
+          <div>
+            <label className="block text-sm">RUT</label>
+            <input
+              type="text"
+              value={rut}
+              onChange={e => setRut(e.target.value)}
+              required
+              className="mt-1 w-full px-3 py-2 border rounded"
+            />
+          </div>
+          {/* Fecha de Nacimiento */}
+          <div>
+            <label className="block text-sm">Fecha de Nacimiento</label>
+            <input
+              type="date"
+              value={dob}
+              onChange={e => setDob(e.target.value)}
+              className="mt-1 w-full px-3 py-2 border rounded"
+            />
+          </div>
+          {/* Email y Contraseña */}
+          <div>
+            <label className="block text-sm">Correo Electrónico</label>
+            <input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              required
+              className="mt-1 w-full px-3 py-2 border rounded"
+            />
+          </div>
+          <div>
+            <label className="block text-sm">Contraseña</label>
+            <input
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              required
+              className="mt-1 w-full px-3 py-2 border rounded"
+            />
+          </div>
+          <div>
+            <label className="block text-sm">Confirmar Contraseña</label>
+            <input
+              type="password"
+              value={confirmPassword}
+              onChange={e => setConfirmPassword(e.target.value)}
+              required
+              className="mt-1 w-full px-3 py-2 border rounded"
+            />
+          </div>
+          {/* Organización y psicólogo */}
+          <div className="flex items-center space-x-2">
+            <input
+              id="registerOrg"
+              type="checkbox"
+              checked={registerOrg}
+              onChange={e => setRegisterOrg(e.target.checked)}
+            />
+            <label htmlFor="registerOrg" className="text-sm">
+              Registrar nueva organización
+            </label>
+          </div>
+          {registerOrg && (
+            <>
+              <div>
+                <label className="block text-sm">Nombre Org.</label>
+                <input
+                  type="text"
+                  value={orgName}
+                  onChange={e => setOrgName(e.target.value)}
+                  required
+                  className="mt-1 w-full px-3 py-2 border rounded"
+                />
+              </div>
+              <div>
+                <label className="block text-sm">RUT Org.</label>
+                <input
+                  type="text"
+                  value={orgRut}
+                  onChange={e => setOrgRut(e.target.value)}
+                  required
+                  className="mt-1 w-full px-3 py-2 border rounded"
+                />
+              </div>
+            </>
+          )}
+          <div className="flex items-center space-x-2">
+            <input
+              id="isPsych"
+              type="checkbox"
+              checked={isPsychologist}
+              onChange={e => setIsPsychologist(e.target.checked)}
+            />
+            <label htmlFor="isPsych" className="text-sm">
+              Además ejerceré como psicólogo
+            </label>
+          </div>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            {loading ? 'Registrando…' : 'Registrarse'}
+          </button>
+        </form>
       </div>
     </Layout>
-  );
-};
+  )
+}
 
 export default RegisterPage;

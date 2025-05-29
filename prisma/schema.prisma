@@ -1,7 +1,7 @@
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider    = "postgresql"
+  url         = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")  
 }
 
 generator client {
@@ -15,23 +15,25 @@ enum Role {
 }
 
 model User {
-  id                       String        @id @default(cuid())
-  clerkUserId              String        @unique
-  rut                      String        @unique
-  name                     String
-  age                      Int?
-  role                     Role          @default(PATIENT)
-  isPsychologist           Boolean       @default(false)
-  organizationId           String?
-  organization             Organization? @relation(fields: [organizationId], references: [id])
-  // Relación paciente–psicólogo
-  patients                 User[]        @relation("PsychologistPatients")
-  assignedPsychologistId   String?
-  psychologist             User?         @relation("PsychologistPatients", fields: [assignedPsychologistId], references: [id])
-  // Entradas de ánimo (solo para pacientes)
-  entries                  Entry[]
-  createdAt                DateTime      @default(now())
-  updatedAt                DateTime      @updatedAt
+  id                     String        @id @default(cuid())
+  clerkUserId            String        @unique
+  rut                    String        @unique
+  firstName              String
+  lastNamePaternal       String
+  lastNameMaternal       String
+  dob                    DateTime?
+  role                   Role          @default(PATIENT)
+  isPsychologist         Boolean       @default(false)
+  organizationId         String?
+  organization           Organization? @relation(fields: [organizationId], references: [id])
+  // self‐relation paciente–psicólogo
+  patients               User[]        @relation("PsychologistPatients")
+  assignedPsychologistId String?
+  psychologist           User?         @relation("PsychologistPatients", fields: [assignedPsychologistId], references: [id])
+  // entradas de ánimo
+  entries                Entry[]
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
 }
 
 model Organization {
@@ -53,5 +55,5 @@ model Entry {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  @@unique([patientId, date]) // Solo una entrada por paciente y día
+  @@unique([patientId, date]) // solo una entrada diaria
 }
