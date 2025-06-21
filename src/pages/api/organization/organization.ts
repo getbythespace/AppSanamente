@@ -1,10 +1,10 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { withUser, requireRole } from '../_utils';
+import { requireRole } from '../../../utils/requireRole';
 import { prisma } from '../../../lib/prisma';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  return withUser(req, res, async user => {
-    requireRole(user, ['ADMIN']);
+  try {
+    const user = await requireRole(req, ['ADMIN']);
 
     if (req.method === 'GET') {
       const list = await prisma.organization.findMany();
@@ -17,9 +17,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
     res.setHeader('Allow', ['GET','POST']);
     res.status(405).end();
-  });
+  } catch (err: any) {
+    res.status(403).json({ error: err.message });
+  }
 }
-
-export const placeholderOrganizationFunction = () => {
-  console.log("Organization module placeholder");
-};

@@ -1,16 +1,15 @@
 import React, { useState, FormEvent } from 'react'
 import { useRouter } from 'next/router'
 import Layout from '../../components/Layout'
-import { signUp, signOut } from './auth'
+import { isValidRut } from '../../utils/validateRut'
 
 const nameRe = /^[A-Za-zÁÉÍÓÚáéíóúñÑ\s]+$/
-function isValidRut(rut: string) {
-  const clean = rut.replace(/[^0-9kK]/g, '').toUpperCase()
-  return clean.length > 7
-}
 
 const RegisterPage = () => {
   const router = useRouter()
+
+  // Bifurcación: tipo de registro
+  const [registerType, setRegisterType] = useState<'psychologist' | 'organization'>('psychologist')
 
   const [firstName, setFirstName] = useState('')
   const [lastNameP, setLastNameP] = useState('')
@@ -20,7 +19,6 @@ const RegisterPage = () => {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
-  const [registerOrg, setRegisterOrg] = useState(false)
   const [orgName, setOrgName] = useState('')
   const [orgRut, setOrgRut] = useState('')
   const [isPsychologist, setIsPsychologist] = useState(false)
@@ -52,43 +50,80 @@ const RegisterPage = () => {
       setError('Las contraseñas no coinciden.')
       return
     }
+    if (registerType === 'organization') {
+      if (!orgName || !orgRut) {
+        setError('Debes ingresar nombre y RUT de la organización.')
+        return
+      }
+    }
 
     setLoading(true)
-    const role = registerOrg || isPsychologist ? 'ADMIN' : 'PATIENT'
-    const metadata: any = {
-      firstName,
-      lastNamePaternal: lastNameP,
-      lastNameMaternal: lastNameM,
-      dob: dob || null,
-      rut,
-      role,
-      isPsychologist
-    }
-    if (registerOrg) {
-      metadata.orgName = orgName
-      metadata.orgRut = orgRut
-    }
+    try {
+      let endpoint = ''
+      let body: any = {
+        firstName,
+        lastNameP,
+        lastNameM,
+        rut,
+        dob,
+        email,
+        password,
+      }
 
-    const { error: signUpError } = await signUp({
-      email,
-      password,
-      options: { data: metadata }
-    })
-    setLoading(false)
-    if (signUpError) {
-      setError(signUpError.message)
-      return
+      if (registerType === 'psychologist') {
+        endpoint = '/api/registration/registerPsychologist'
+      } else {
+        endpoint = '/api/registration/registerOrganization'
+        body.orgName = orgName
+        body.orgRut = orgRut
+        body.isPsychologist = isPsychologist
+      }
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      })
+      const data = await res.json()
+      setLoading(false)
+      if (!res.ok) {
+        setError(data.error || 'Error en el registro')
+        return
+      }
+      router.push('/auth/login')
+    } catch (err: any) {
+      setLoading(false)
+      setError('Error en el registro')
     }
-    await signOut()
-    router.push('/auth/login')
   }
 
   return (
     <Layout title="Registrarse – App Sanamente">
       <div className="max-w-md mx-auto py-10">
         <h2 className="text-2xl font-bold mb-6">Crear Cuenta</h2>
+        {/* Tipo de registro */}
+        <div className="mb-4">
+          <label className="mr-4">
+            <input
+              type="radio"
+              name="registerType"
+              value="psychologist"
+              checked={registerType === 'psychologist'}
+              onChange={() => setRegisterType('psychologist')}
+            /> Psicólogo Independiente
+          </label>
+          <label>
+            <input
+              type="radio"
+              name="registerType"
+              value="organization"
+              checked={registerType === 'organization'}
+              onChange={() => setRegisterType('organization')}
+            /> Organización
+          </label>
+        </div>
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Nombre */}
+          {/* Datos personales */}
           <div>
             <label className="block text-sm">Nombre</label>
             <input
@@ -99,7 +134,6 @@ const RegisterPage = () => {
               className="mt-1 w-full px-3 py-2 border rounded"
             />
           </div>
-          {/* Apellido Paterno */}
           <div>
             <label className="block text-sm">Apellido Paterno</label>
             <input
@@ -110,7 +144,6 @@ const RegisterPage = () => {
               className="mt-1 w-full px-3 py-2 border rounded"
             />
           </div>
-          {/* Apellido Materno */}
           <div>
             <label className="block text-sm">Apellido Materno</label>
             <input
@@ -121,7 +154,6 @@ const RegisterPage = () => {
               className="mt-1 w-full px-3 py-2 border rounded"
             />
           </div>
-          {/* RUT */}
           <div>
             <label className="block text-sm">RUT</label>
             <input
@@ -132,7 +164,6 @@ const RegisterPage = () => {
               className="mt-1 w-full px-3 py-2 border rounded"
             />
           </div>
-          {/* Fecha de Nacimiento */}
           <div>
             <label className="block text-sm">Fecha de Nacimiento</label>
             <input
@@ -142,7 +173,6 @@ const RegisterPage = () => {
               className="mt-1 w-full px-3 py-2 border rounded"
             />
           </div>
-          {/* Email y Contraseña */}
           <div>
             <label className="block text-sm">Correo Electrónico</label>
             <input
@@ -173,22 +203,11 @@ const RegisterPage = () => {
               className="mt-1 w-full px-3 py-2 border rounded"
             />
           </div>
-          {/* Organización y psicólogo */}
-          <div className="flex items-center space-x-2">
-            <input
-              id="registerOrg"
-              type="checkbox"
-              checked={registerOrg}
-              onChange={e => setRegisterOrg(e.target.checked)}
-            />
-            <label htmlFor="registerOrg" className="text-sm">
-              Registrar nueva organización
-            </label>
-          </div>
-          {registerOrg && (
+          {/* Solo para registro de organización */}
+          {registerType === 'organization' && (
             <>
               <div>
-                <label className="block text-sm">Nombre Org.</label>
+                <label className="block text-sm">Nombre Organización</label>
                 <input
                   type="text"
                   value={orgName}
@@ -198,7 +217,7 @@ const RegisterPage = () => {
                 />
               </div>
               <div>
-                <label className="block text-sm">RUT Org.</label>
+                <label className="block text-sm">RUT Organización</label>
                 <input
                   type="text"
                   value={orgRut}
@@ -207,19 +226,19 @@ const RegisterPage = () => {
                   className="mt-1 w-full px-3 py-2 border rounded"
                 />
               </div>
+              <div className="flex items-center space-x-2">
+                <input
+                  id="isPsych"
+                  type="checkbox"
+                  checked={isPsychologist}
+                  onChange={e => setIsPsychologist(e.target.checked)}
+                />
+                <label htmlFor="isPsych" className="text-sm">
+                  Además ejerceré como psicólogo
+                </label>
+              </div>
             </>
           )}
-          <div className="flex items-center space-x-2">
-            <input
-              id="isPsych"
-              type="checkbox"
-              checked={isPsychologist}
-              onChange={e => setIsPsychologist(e.target.checked)}
-            />
-            <label htmlFor="isPsych" className="text-sm">
-              Además ejerceré como psicólogo
-            </label>
-          </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
           <button
             type="submit"
@@ -234,4 +253,4 @@ const RegisterPage = () => {
   )
 }
 
-export default RegisterPage;
+export default RegisterPage

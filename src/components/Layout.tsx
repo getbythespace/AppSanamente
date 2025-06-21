@@ -1,4 +1,3 @@
-// filepath: c:\Users\pvall\Desktop\appSanamente\src\components\Layout.tsx
 
 import React, { ReactNode } from 'react';
 import Head from 'next/head';

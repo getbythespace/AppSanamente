@@ -14,17 +14,17 @@ export async function withUser(
 
   const user = await prisma.user.findUnique({
     where: { clerkUserId: userId },
+    include: { roles: true }
   });
   if (!user) {
     return res.status(403).json({ error: 'Access denied' });
   }
 
-  // Devolvemos lo que retorne el callback (void o NextApiResponse)
   return handler(user);
 }
 
 export function requireRole(user: any, roles: string[]) {
-  if (!roles.includes(user.role)) {
+  if (!user.roles.some((r: any) => roles.includes(r.role))) {
     throw { status: 403, message: 'Forbidden' };
   }
 }
