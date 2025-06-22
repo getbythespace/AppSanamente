@@ -1,49 +1,54 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/prisma'
 import { RoleType } from '@prisma/client'
-import { createClerkUser } from '../../../utils/clerkApi'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') return res.status(405).end()
   try {
     const { firstName, lastNameP, lastNameM, rut, dob, email, password } = req.body
 
-    // 1. Crear usuario en Clerk
-    const clerkUser = await createClerkUser({
+    // 1. Crear usuario en Supabase Auth
+    const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
       email,
       password,
-      firstName,
-      lastName: `${lastNameP} ${lastNameM}`,
+      email_confirm: false,
     })
 
-    // 2. Crear organización interna
-    const org = await prisma.organization.create({
-      data: {
-        name: `${firstName} ${lastNameP}`,
-        rut: rut + '-ORG'
-      }
-    })
+ if (authError || !authUser?.user) {
+  return res.status(400).json({ error: authError?.message || 'No se pudo crear el usuario en Supabase Auth' })
+}
 
-    // 3. Crear usuario en tu base de datos con clerkUserId y roles correctos
+// Enviar correo de confirmación manualmente y manejar error
+const { data: inviteData, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(email)
+if (inviteError) {
+  console.error('Error enviando invitación:', inviteError)
+  return res.status(400).json({ error: inviteError.message })
+}
+
+    // 1.5 Enviar correo de confirmación manualmente
+    await supabase.auth.admin.inviteUserByEmail(email)
+
+    // 2. Crear usuario en tu base de datos con el id de Supabase Auth
     const user = await prisma.user.create({
       data: {
-        clerkUserId: clerkUser.id,
+        id: authUser.user.id,
         rut,
         firstName,
         lastNamePaternal: lastNameP,
         lastNameMaternal: lastNameM,
         dob,
-        organizationId: org.id,
-        roles: {
-          create: [
-            { role: RoleType.ADMIN },
-            { role: RoleType.PSYCHOLOGIST }
-          ]
-        }
+        isPsychologist: true,
+        roles: { create: [{ role: RoleType.PSYCHOLOGIST }] }
       }
     })
 
-    res.status(201).json({ user, org })
+    res.status(201).json({ user })
   } catch (err: any) {
     res.status(400).json({ error: err.message })
   }

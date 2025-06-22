@@ -2,15 +2,14 @@ import React, { useState, FormEvent } from 'react'
 import { useRouter } from 'next/router'
 import Layout from '../../components/Layout'
 import { isValidRut } from '../../utils/validateRut'
+import { signUp } from '../auth/auth' // Usa tu helper de signUp
 
 const nameRe = /^[A-Za-zÁÉÍÓÚáéíóúñÑ\s]+$/
 
 const RegisterPage = () => {
   const router = useRouter()
 
-  // Bifurcación: tipo de registro
   const [registerType, setRegisterType] = useState<'psychologist' | 'organization'>('psychologist')
-
   const [firstName, setFirstName] = useState('')
   const [lastNameP, setLastNameP] = useState('')
   const [lastNameM, setLastNameM] = useState('')
@@ -22,7 +21,6 @@ const RegisterPage = () => {
   const [orgName, setOrgName] = useState('')
   const [orgRut, setOrgRut] = useState('')
   const [isPsychologist, setIsPsychologist] = useState(false)
-
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -59,37 +57,20 @@ const RegisterPage = () => {
 
     setLoading(true)
     try {
-      let endpoint = ''
-      let body: any = {
-        firstName,
-        lastNameP,
-        lastNameM,
-        rut,
-        dob,
+      // Solo registro en Supabase Auth (correo de confirmación tradicional)
+      const { user, error: signUpError } = await signUp({
         email,
-        password,
-      }
-
-      if (registerType === 'psychologist') {
-        endpoint = '/api/registration/registerPsychologist'
-      } else {
-        endpoint = '/api/registration/registerOrganization'
-        body.orgName = orgName
-        body.orgRut = orgRut
-        body.isPsychologist = isPsychologist
-      }
-
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
+        password
       })
-      const data = await res.json()
+
       setLoading(false)
-      if (!res.ok) {
-        setError(data.error || 'Error en el registro')
+
+      if (signUpError) {
+        setError(signUpError.message || 'Error en el registro')
         return
       }
+
+      // Aquí puedes mostrar un mensaje de éxito o redirigir
       router.push('/auth/login')
     } catch (err: any) {
       setLoading(false)

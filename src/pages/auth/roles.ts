@@ -1,18 +1,21 @@
-import { getAuth } from '@clerk/nextjs/server';
-import type { NextApiRequest, NextApiResponse } from 'next';
-import { prisma } from 'src/lib/prisma';
+// filepath: [roles.ts](http://_vscodecontentref_/5)
+import type { NextApiRequest, NextApiResponse } from 'next'
+import { prisma } from 'src/lib/prisma'
+import { supabase } from 'src/services/db'
 
 export async function withUser(
   req: NextApiRequest, res: NextApiResponse,
   handler: (user: any) => Promise<void>
 ) {
-  const { userId } = getAuth(req);
-  if (!userId) return res.status(401).end();
-  const user = await prisma.user.findUnique({ where: { clerkUserId: userId } });
-  if (!user) return res.status(403).end();
-  return handler(user);
+  const token = req.headers.authorization?.replace('Bearer ', '')
+  if (!token) return res.status(401).end()
+  const { data: { user }, error } = await supabase.auth.getUser(token)
+  if (error || !user) return res.status(401).end()
+  const dbUser = await prisma.user.findUnique({ where: { id: user.id } })
+  if (!dbUser) return res.status(403).end()
+  return handler(dbUser)
 }
 
 export function requireRole(user: any, roles: string[]) {
-  if (!roles.includes(user.role)) throw { status: 403, message: 'Forbidden' };
+  if (!roles.includes(user.role)) throw { status: 403, message: 'Forbidden' }
 }

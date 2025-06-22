@@ -5,7 +5,6 @@ export const signUp = async (credentials: SignUpWithPasswordCredentials) => {
   const { data, error } = await supabase.auth.signUp(credentials);
   if (error) {
     console.error('Error signing up:', error.message);
-    // MANEJO DE ERRORES
     return { user: null, session: null, error };
   }
   return { user: data.user, session: data.session, error: null };
@@ -15,7 +14,6 @@ export const signIn = async (credentials: SignInWithPasswordCredentials) => {
   const { data, error } = await supabase.auth.signInWithPassword(credentials);
   if (error) {
     console.error('Error signing in:', error.message);
-    // MANEJO DE ERRORES
     return { user: null, session: null, error };
   }
   return { user: data.user, session: data.session, error: null };
@@ -25,7 +23,6 @@ export const signOut = async () => {
   const { error } = await supabase.auth.signOut();
   if (error) {
     console.error('Error signing out:', error.message);
-    // MANEJO DE ERRORES
   }
   return { error };
 };

@@ -1,11 +1,11 @@
-datasource db {
-  provider    = "postgresql"
-  url         = env("DATABASE_URL")
-  directUrl   = env("DIRECT_URL")  
-}
-
 generator client {
   provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 enum RoleType {
@@ -17,13 +17,12 @@ enum RoleType {
 
 model User {
   id                     String        @id @default(cuid())
-  clerkUserId            String        @unique
   rut                    String        @unique
   firstName              String
   lastNamePaternal       String
   lastNameMaternal       String
   dob                    DateTime?
-  roles                  UserRole[]    // Relación muchos a muchos con roles
+  roles                  UserRole[]
   isPsychologist         Boolean       @default(false)
   organizationId         String?
   organization           Organization? @relation(fields: [organizationId], references: [id])

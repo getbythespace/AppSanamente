@@ -1,38 +1,36 @@
-import React, { useState, FormEvent } from 'react';
-import { useRouter } from 'next/router';
-import Layout from '../../components/Layout'; //tsconfig.json
-import { signIn } from './auth';         //tsconfig.json
-// IMPORTAR USE AUTH
+import React, { useState, FormEvent } from 'react'
+import { useRouter } from 'next/router'
+import Layout from '../../components/Layout'
+import supabase from '../../lib/supabaseClient' // Usa solo este import
 
 const LoginPage = () => {
-  const router = useRouter();
-  // IMPLEMENTAR AUTH CONTEXT
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const router = useRouter()
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
 
   const handleSubmit = async (event: FormEvent) => {
-    event.preventDefault();
-    setError(null);
-    setLoading(true);
+    event.preventDefault()
+    setError(null)
+    setLoading(true)
 
-    const { user, session, error: signInError } = await signIn({ email, password });
+    const { data, error: signInError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    })
 
-    setLoading(false);
+    setLoading(false)
 
     if (signInError) {
-      setError(signInError.message || 'Error al iniciar sesión. Verifica tus credenciales.');
-      return;
+      setError(signInError.message || 'Error al iniciar sesión. Verifica tus credenciales.')
+      return
     }
 
-    if (user && session) {
-      console.log('Login successful:', user);
-      // AUTH CONTEXT, PARA IMPLEMENTAR EL ESTADO GLOBAL DEL USUARIO
-      // AWAIT LOGIN POR IMPLEMENTAR
-      router.push('/dashboard'); // REDIRIGE A UN DASHBOARD DEFAULT DE MOMENTO
+    if (data.user && data.session) {
+      router.push('/dashboard')
     }
-  };
+  }
 
   return (
     <Layout title="Iniciar Sesión - App Sanamente">
@@ -90,7 +88,7 @@ const LoginPage = () => {
         </div>
       </div>
     </Layout>
-  );
-};
+  )
+}
 
-export default LoginPage;
+export default LoginPage
