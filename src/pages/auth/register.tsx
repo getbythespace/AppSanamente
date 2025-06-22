@@ -1,10 +1,11 @@
 import React, { useState, FormEvent } from 'react'
 import { useRouter } from 'next/router'
 import Layout from '../../components/Layout'
-import { isValidRut } from '../../utils/validateRut'
-import { signUp } from '../auth/auth' 
+import { isValidRut, formatRut } from '../../utils/validateRut'
+import { signUp } from '../auth/auth'
 
 const nameRe = /^[A-Za-zÁÉÍÓÚáéíóúñÑ\s]+$/
+const passwordRe = /^(?=.*[A-Z])(?=.*[\d\W]).{8,}$/ // Mínimo 8, una mayúscula, un número o símbolo
 
 const RegisterPage = () => {
   const router = useRouter()
@@ -24,6 +25,14 @@ const RegisterPage = () => {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
+  // Formatear RUT automáticamente al escribir
+  const handleRutChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setRut(formatRut(e.target.value))
+  }
+  const handleOrgRutChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setOrgRut(formatRut(e.target.value))
+  }
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setError(null)
@@ -32,10 +41,38 @@ const RegisterPage = () => {
       setError('Los nombres sólo pueden tener letras y espacios.')
       return
     }
+
+    // Validar formato RUT con puntos y guión
     if (!isValidRut(rut)) {
-      setError('RUT inválido.')
+      setError('RUT inválido. Debe tener formato 12.345.678-5')
       return
     }
+
+    // Validar mayoría de edad solo para psicólogos
+    if (registerType === 'psychologist') {
+      if (!dob) {
+        setError('Debes ingresar fecha de nacimiento.')
+        return
+      }
+      const edad = Math.floor((Date.now() - new Date(dob).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+      if (edad < 18) {
+        setError('Debes ser mayor de edad para registrarte como psicólogo.')
+        return
+      }
+    }
+
+    // Validar RUT de organización si corresponde
+    if (registerType === 'organization') {
+      if (!orgName || !orgRut) {
+        setError('Debes ingresar nombre y RUT de la organización.')
+        return
+      }
+      if (!isValidRut(orgRut)) {
+        setError('RUT de organización inválido. Debe tener formato 12.345.678-5')
+        return
+      }
+    }
+
     if (dob && new Date(dob) >= new Date()) {
       setError('Fecha de nacimiento inválida.')
       return
@@ -44,20 +81,18 @@ const RegisterPage = () => {
       setError('Correo electrónico inválido.')
       return
     }
+    if (!passwordRe.test(password)) {
+      setError('La contraseña debe tener al menos 8 caracteres, una mayúscula y un número o símbolo.')
+      return
+    }
     if (password !== confirmPassword) {
       setError('Las contraseñas no coinciden.')
       return
     }
-    if (registerType === 'organization') {
-      if (!orgName || !orgRut) {
-        setError('Debes ingresar nombre y RUT de la organización.')
-        return
-      }
-    }
 
     setLoading(true)
     try {
-      // correo de confirmación tradicional
+      // Registro en Supabase Auth (correo de confirmación tradicional)
       const { user, error: signUpError } = await signUp({
         email,
         password
@@ -70,7 +105,7 @@ const RegisterPage = () => {
         return
       }
 
-      
+      // Aquí podrías mostrar mensaje: "Revisa tu correo para confirmar tu cuenta"
       router.push('/auth/login')
     } catch (err: any) {
       setLoading(false)
@@ -140,9 +175,11 @@ const RegisterPage = () => {
             <input
               type="text"
               value={rut}
-              onChange={e => setRut(e.target.value)}
+              onChange={handleRutChange}
               required
+              placeholder="12.345.678-5"
               className="mt-1 w-full px-3 py-2 border rounded"
+              maxLength={12}
             />
           </div>
           <div>
@@ -153,6 +190,7 @@ const RegisterPage = () => {
               onChange={e => setDob(e.target.value)}
               className="mt-1 w-full px-3 py-2 border rounded"
             />
+            {/* Para mejor UX, puedes reemplazar esto por un datepicker más amigable */}
           </div>
           <div>
             <label className="block text-sm">Correo Electrónico</label>
@@ -172,6 +210,7 @@ const RegisterPage = () => {
               onChange={e => setPassword(e.target.value)}
               required
               className="mt-1 w-full px-3 py-2 border rounded"
+              placeholder="Mínimo 8, mayúscula y número/símbolo"
             />
           </div>
           <div>
@@ -202,9 +241,11 @@ const RegisterPage = () => {
                 <input
                   type="text"
                   value={orgRut}
-                  onChange={e => setOrgRut(e.target.value)}
+                  onChange={handleOrgRutChange}
                   required
+                  placeholder="12.345.678-5"
                   className="mt-1 w-full px-3 py-2 border rounded"
+                  maxLength={12}
                 />
               </div>
               <div className="flex items-center space-x-2">
