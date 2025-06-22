@@ -1,7 +1,7 @@
 import React, { useState, FormEvent } from 'react'
 import { useRouter } from 'next/router'
 import Layout from '../../components/Layout'
-import supabase from '../../lib/supabaseClient' // Usa solo este import
+import supabase from '../../lib/supabaseClient' 
 
 const LoginPage = () => {
   const router = useRouter()

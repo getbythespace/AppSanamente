@@ -1,9 +1,9 @@
-// filepath: [requireRole.ts](http://_vscodecontentref_/2)
+
 import { prisma } from '../lib/prisma'
 import { supabase } from '../services/db'
 
 export async function requireRole(req: any, allowedRoles: string[]) {
-  // Obtener el token de sesión de Supabase desde el header Authorization
+  // Obtener el token de sesión de Supabase desde el header Auth
   const token = req.headers.authorization?.replace('Bearer ', '')
   if (!token) throw new Error('No autenticado')
 
@@ -11,7 +11,7 @@ export async function requireRole(req: any, allowedRoles: string[]) {
   const { data: { user }, error } = await supabase.auth.getUser(token)
   if (error || !user) throw new Error('No autenticado')
 
-  // Buscar el usuario en tu base de datos por id de Supabase
+  // Buscar el usuario x  id de Supabase
   const dbUser = await prisma.user.findUnique({
     where: { id: user.id },
     include: { roles: true }

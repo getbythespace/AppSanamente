@@ -2,7 +2,7 @@ import React, { useState, FormEvent } from 'react'
 import { useRouter } from 'next/router'
 import Layout from '../../components/Layout'
 import { isValidRut } from '../../utils/validateRut'
-import { signUp } from '../auth/auth' // Usa tu helper de signUp
+import { signUp } from '../auth/auth' 
 
 const nameRe = /^[A-Za-zÁÉÍÓÚáéíóúñÑ\s]+$/
 
@@ -57,7 +57,7 @@ const RegisterPage = () => {
 
     setLoading(true)
     try {
-      // Solo registro en Supabase Auth (correo de confirmación tradicional)
+      // correo de confirmación tradicional
       const { user, error: signUpError } = await signUp({
         email,
         password
@@ -70,7 +70,7 @@ const RegisterPage = () => {
         return
       }
 
-      // Aquí puedes mostrar un mensaje de éxito o redirigir
+      
       router.push('/auth/login')
     } catch (err: any) {
       setLoading(false)

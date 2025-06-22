@@ -13,7 +13,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     const { firstName, lastNameP, lastNameM, rut, dob, email, password } = req.body
 
-    // 1. Crear usuario en Supabase Auth
+    //Crear usuario en Supabase Auth
     const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
       email,
       password,
@@ -24,17 +24,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   return res.status(400).json({ error: authError?.message || 'No se pudo crear el usuario en Supabase Auth' })
 }
 
-// Enviar correo de confirmación manualmente y manejar error
+//Enviar correo de confirmación manualmente y manejar error
 const { data: inviteData, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(email)
 if (inviteError) {
   console.error('Error enviando invitación:', inviteError)
   return res.status(400).json({ error: inviteError.message })
 }
 
-    // 1.5 Enviar correo de confirmación manualmente
+    // Enviar correo de confirmación manualmente
     await supabase.auth.admin.inviteUserByEmail(email)
 
-    // 2. Crear usuario en tu base de datos con el id de Supabase Auth
+    // Crear usuario en tu base de datos con el id de Supabase Auth
     const user = await prisma.user.create({
       data: {
         id: authUser.user.id,

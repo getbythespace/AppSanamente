@@ -1,4 +1,4 @@
-// filepath: [roles.ts](http://_vscodecontentref_/5)
+
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from 'src/lib/prisma'
 import { supabase } from 'src/services/db'
