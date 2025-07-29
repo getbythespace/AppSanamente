@@ -23,3 +23,7 @@ export async function createClerkUser({ email, password, firstName, lastName }: 
   }
   return res.json()
 }
+
+
+
+//borrar archivo

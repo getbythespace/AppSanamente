@@ -1,4 +1,4 @@
-import { useCurrentUser } from '../hooks/useCurrentUser'
+import useCurrentUser from '../hooks/useCurrentUser'
 import { useRouter } from 'next/router'
 import { useEffect } from 'react'
 

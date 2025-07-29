@@ -2,7 +2,8 @@ import React, { useState, FormEvent } from 'react'
 import { useRouter } from 'next/router'
 import Layout from '../../components/Layout'
 import { isValidRut, formatRut } from '../../utils/validateRut'
-import { signUp } from '../auth/auth'
+import { signUp } from '../../services/db'; 
+
 
 const nameRe = /^[A-Za-zÁÉÍÓÚáéíóúñÑ\s]+$/
 const passwordRe = /^(?=.*[A-Z])(?=.*[\d\W]).{8,}$/ // Mínimo 8, una mayúscula, un número o símbolo
@@ -48,7 +49,7 @@ const RegisterPage = () => {
       return
     }
 
-    // Validar mayoría de edad solo para psicólogos
+    // Validar mayoría de edad solo para psicólogos (debería ser para asistentes también *******)
     if (registerType === 'psychologist') {
       if (!dob) {
         setError('Debes ingresar fecha de nacimiento.')
@@ -92,7 +93,7 @@ const RegisterPage = () => {
 
     setLoading(true)
     try {
-      // Registro en Supabase Auth (correo de confirmación tradicional)
+      // correo de confirmación tradicional supabase
       const { user, error: signUpError } = await signUp({
         email,
         password
@@ -105,7 +106,7 @@ const RegisterPage = () => {
         return
       }
 
-      // Aquí podrías mostrar mensaje: "Revisa tu correo para confirmar tu cuenta"
+      // mensaje de confirmación aún no realizada
       router.push('/auth/login')
     } catch (err: any) {
       setLoading(false)
@@ -190,7 +191,7 @@ const RegisterPage = () => {
               onChange={e => setDob(e.target.value)}
               className="mt-1 w-full px-3 py-2 border rounded"
             />
-            {/* Para mejor UX, puedes reemplazar esto por un datepicker más amigable */}
+            {/* CAMBIAR POR DATEPICKER */}
           </div>
           <div>
             <label className="block text-sm">Correo Electrónico</label>

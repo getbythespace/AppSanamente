@@ -1,6 +1,21 @@
-import { clerkMiddleware } from '@clerk/nextjs/server'
+import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs'
+import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
 
-export default clerkMiddleware()
+export async function middleware(req: NextRequest) {
+  const res = NextResponse.next()
+  const supabase = createMiddlewareClient({ req, res })
+
+  // Obtener sesión actual del usuario
+  const { data: { session } } = await supabase.auth.getSession()
+
+  // Redirigir al login si no hay sesión
+  if (!session && !req.nextUrl.pathname.startsWith('/auth')) {
+    return NextResponse.redirect(new URL('/auth/login', req.url))
+  }
+
+  return res
+}
 
 export const config = {
   matcher: [
@@ -15,7 +30,7 @@ export const config = {
     "/patient/(.*)",
     "/organization",
     "/organization/(.*)",
-    // Todas las rutas de API (excepto auth públicas si tienes)
+    // Rutas de autenticación
     "/api/(.*)",
   ],
 }

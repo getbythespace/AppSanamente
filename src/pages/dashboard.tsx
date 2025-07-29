@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import Layout from '../components/Layout'; 
-import { getCurrentUser, signOut as supabaseSignOut } from './auth/auth'; 
+import { getCurrentUser, signOut as supabaseSignOut } from '../services/db'; 
 import { User } from '@supabase/supabase-js';
 
 const DashboardPage = () => {
@@ -13,7 +13,7 @@ const DashboardPage = () => {
     const fetchUser = async () => {
       const currentUser = await getCurrentUser();
       if (!currentUser) {
-        router.push('/auth/login'); // REDIRIGIR SI NO HAY USUARIO
+        router.push('/auth/login');
       } else {
         setUser(currentUser);
       }
@@ -24,8 +24,8 @@ const DashboardPage = () => {
 
   const handleSignOut = async () => {
     await supabaseSignOut();
-    setUser(null); // LIMPIAR EL ESTADO DEL USUARIO MANUALMENTE
-    router.push('/auth/login'); // REDIRECCION A LOGIN
+    setUser(null);
+    router.push('/auth/login');
   };
 
   if (loading) {
@@ -39,7 +39,6 @@ const DashboardPage = () => {
   }
 
   if (!user) {
-    // FALL BACK SI NO HAY USUARIO
     return (
       <Layout title="Acceso Denegado">
         <div className="flex justify-center items-center min-h-screen">
@@ -68,7 +67,6 @@ const DashboardPage = () => {
           <p><strong>ID de Usuario:</strong> {user.id}</p>
           <p><strong>Último inicio de sesión:</strong> {user.last_sign_in_at ? new Date(user.last_sign_in_at).toLocaleString() : 'N/A'}</p>
           
-          {/* INCLUIR CONTENIDO ESPECIFICO POR ROL */}
           <div className="mt-6">
             <h3 className="text-xl font-semibold">Próximos Pasos:</h3>
             <ul className="list-disc list-inside ml-4">

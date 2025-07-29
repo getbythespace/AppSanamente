@@ -13,7 +13,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (req.method === 'POST') {
       const data = req.body;
-      const u = await prisma.user.create({ data });
+      // Solo puede crear usuarios en su organización
+      const u = await prisma.user.create({ data: { ...data, organizationId: user.organizationId } });
       return res.status(201).json(u);
     }
 

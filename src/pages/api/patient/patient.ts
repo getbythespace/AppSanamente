@@ -4,10 +4,10 @@ import { prisma } from "src/lib/prisma";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
-    const user = await requireRole(req, ['PATIENT', 'PSYCHOLOGIST']);
+    const user = await requireRole(req, ['PATIENT', 'PSYCHOLOGIST', 'ASSISTANT']);
     const patientId = req.query.id as string;
 
-    // Solo el paciente dueño o el psicólogo asignado pueden crear/ver
+    // Solo el paciente dueño, el psicólogo asignado o el asistente pueden crear/ver
     if (user.roles.some((r: any) => r.role === "PATIENT") && user.id !== patientId) {
       return res.status(403).json({ error: "Forbidden" });
     }
@@ -18,6 +18,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(404).json({ error: "Patient not found" });
       }
       if (user.id !== patient.assignedPsychologistId) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+    }
+
+    if (user.roles.some((r: any) => r.role === "ASSISTANT")) {
+      // Solo puede operar sobre pacientes de su organización
+      const patient = await prisma.user.findUnique({ where: { id: patientId } });
+      if (!patient || patient.organizationId !== user.organizationId) {
         return res.status(403).json({ error: "Forbidden" });
       }
     }
@@ -44,3 +52,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     res.status(403).json({ error: err.message });
   }
 }
+
+//verificar permisos asistente hacia el paciente

@@ -14,9 +14,7 @@ export function formatRut(rut: string): string {
   return `${formatted}-${dv}`;
 }
 
-/**
- * Valida un RUT chileno formateado (X.XXX.XXX-Y o XX.XXX.XXX-Y)
- */
+//formateo rut chileno
 export function isValidRut(rut: string): boolean {
   // Debe tener formato X.XXX.XXX-Y o XX.XXX.XXX-Y
   if (!/^\d{1,2}\.\d{3}\.\d{3}-[\dkK]$/.test(rut)) return false;
