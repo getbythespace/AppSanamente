@@ -1,36 +1,36 @@
-import { prisma } from 'src/lib/prisma'
+
+import type { NextApiRequest, NextApiResponse } from 'next'
+import { prisma } from '@/lib/prisma'
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseAdmin = createClient(
+const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY! 
+)
 
-// Obtiene el usuario autenticado y sus datos/roles/org desde JWT Bearer en request.
-export async function getSessionUser(req: any, res: any) {
-  // Lee token del header Authorization
-  const authHeader = req.headers.authorization || '';
-  const token = authHeader.replace(/^Bearer\s+/, '');
+function getAccessToken(req: NextApiRequest): string | undefined {
+  const auth = req.headers.authorization
+  if (auth?.startsWith('Bearer ')) return auth.slice(7)
+  
+  const cookie = req.headers.cookie || ''
+  const match = cookie.match(/(?:^|;\s*)sb-access-token=([^;]+)/)
+  return match ? decodeURIComponent(match[1]) : undefined
+}
 
-  if (!token) return null;
 
-  // Decodifica el usuario desde el token usando Supabase
-  const { data, error } = await supabaseAdmin.auth.getUser(token);
-  if (error || !data?.user) return null;
+export async function getSessionUser(req: NextApiRequest, _res: NextApiResponse) {
+  const token = getAccessToken(req)
+  if (!token) return null
 
-  // Busca el usuario en la BD con sus roles y org
+  const { data, error } = await supabase.auth.getUser(token)
+  if (error || !data?.user?.id) return null
+
   const user = await prisma.user.findUnique({
     where: { id: data.user.id },
     include: {
       roles: true,
-    },
-  });
-
-  if (!user) return null;
-
-  return {
-    ...user,
-    roles: user.roles,
-    organizationId: user.organizationId,
-  };
+      organization: { select: { id: true, plan: true } }
+    }
+  })
+  return user
 }

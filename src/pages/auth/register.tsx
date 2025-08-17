@@ -2,7 +2,7 @@ import React, { useState, FormEvent } from 'react'
 import { useRouter } from 'next/router'
 import Layout from '../../components/Layout'
 import { isValidRut, formatRut } from '../../utils/validateRut'
-import { signUp } from '../../services/db'; 
+import { signUp } from '../../lib/db'; 
 
 
 const nameRe = /^[A-Za-zÁÉÍÓÚáéíóúñÑ\s]+$/

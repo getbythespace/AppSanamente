@@ -1,36 +1,32 @@
-import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs'
+// middleware.ts
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs'
 
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next()
+  // No proteger auth ni público
+  const open = ['/auth', '/_next', '/public', '/.well-known']
+  if (open.some(p => req.nextUrl.pathname.startsWith(p))) return res
+
+  // Proteger solo paneles
+  const protectedPrefixes = [
+    '/dashboard','/admin','/psychologist','/patient','/organization','/superadmin'
+  ]
+  if (!protectedPrefixes.some(p => req.nextUrl.pathname.startsWith(p))) return res
+
   const supabase = createMiddlewareClient({ req, res })
-
-  // Obtener sesión actual del usuario
   const { data: { session } } = await supabase.auth.getSession()
-
-  // Redirigir al login si no hay sesión
-  if (!session && !req.nextUrl.pathname.startsWith('/auth')) {
-    return NextResponse.redirect(new URL('/auth/login', req.url))
+  if (!session) {
+    const url = new URL('/auth/login', req.url)
+    url.searchParams.set('next', req.nextUrl.pathname)
+    return NextResponse.redirect(url)
   }
-
   return res
 }
 
 export const config = {
   matcher: [
-    // Paneles y rutas privadas
-    "/dashboard",
-    "/dashboard/(.*)",
-    "/admin",
-    "/admin/(.*)",
-    "/psychologist",
-    "/psychologist/(.*)",
-    "/patient",
-    "/patient/(.*)",
-    "/organization",
-    "/organization/(.*)",
-    // Rutas de autenticación
-    "/api/(.*)",
+    '/((?!api|_next|static|favicon.ico|.well-known).*)',
   ],
 }

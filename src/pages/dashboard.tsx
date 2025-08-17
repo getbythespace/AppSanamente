@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import Layout from '../components/Layout'; 
-import { getCurrentUser, signOut as supabaseSignOut } from '../services/db'; 
+import { getCurrentUser, signOut as supabaseSignOut } from '../lib/db'; 
 import { User } from '@supabase/supabase-js';
 
 const DashboardPage = () => {

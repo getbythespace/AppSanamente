@@ -8,59 +8,228 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+/**
+ * ======================= ENUMS =======================
+ */
 enum RoleType {
+  OWNER // Dueñ@ de la organización (gestión total + billing)
   ADMIN
   PSYCHOLOGIST
-  PATIENT
   ASSISTANT
+  PATIENT
+  SUPERADMIN
 }
 
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  PENDING
+  SUSPENDED
+  DELETED
+}
+
+enum OrgPlan {
+  SOLO // psicólogo independiente (no puede invitar más clínicos)
+  TEAM // organizaciones con equipo
+  TRIAL // opcional: pruebas
+}
+
+/**
+ * =================== MODELOS PRINCIPALES ===================
+ */
 model User {
-  id                     String        @id @default(cuid())
-  email                  String        @unique
-  rut                    String        @unique
-  firstName              String
-  lastNamePaternal       String
-  lastNameMaternal       String
-  dob                    DateTime?
-  roles                  UserRole[]
-  isPsychologist         Boolean       @default(false)
-  organizationId         String?
-  organization           Organization? @relation(fields: [organizationId], references: [id])
-  patients               User[]        @relation("PsychologistPatients")
-  assignedPsychologistId String?
-  psychologist           User?         @relation("PsychologistPatients", fields: [assignedPsychologistId], references: [id])
-  entries                Entry[]
-  createdAt              DateTime      @default(now())
-  updatedAt              DateTime      @updatedAt
-}
+  id               String    @id @default(cuid())
+  email            String    @unique
+  rut              String    @unique
+  firstName        String
+  lastNamePaternal String
+  lastNameMaternal String
+  dob              DateTime?
 
+  // ⚠️ DEPRECATED: preferir RoleType.PSYCHOLOGIST
+  isPsychologist Boolean @default(false)
+
+  // Multirol
+  roles UserRole[]
+
+  // Pertenencia a organización
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  // Relación psicólogo <-> pacientes (self relation 1-N)
+  patients               User[]  @relation("PsychologistPatients")
+  assignedPsychologistId String?
+  psychologist           User?   @relation("PsychologistPatients", fields: [assignedPsychologistId], references: [id], onDelete: SetNull)
+
+  // Datos clínicos
+  entries Entry[]
+
+  // 1–1 opcional: recordatorio (solo pacientes)
+  reminder Reminder?
+
+  // Auditoría y estado
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  status    UserStatus @default(ACTIVE)
+  auditLogs AuditLog[] @relation("UserAuditLogs")
+
+  // Bitácoras de sesión
+  sessionNotesAsPatient      SessionNote[] @relation("PatientSessionNotes")
+  sessionNotesAsPsychologist SessionNote[] @relation("PsychologistSessionNotes")
+
+  // Diagnósticos
+  diagnosesAsPatient      Diagnosis[] @relation("PatientDiagnoses")
+  diagnosesAsPsychologist Diagnosis[] @relation("PsychologistDiagnoses")
+
+  // --- Back-relations para solicitudes de plan ---
+  planChangeRequestsAuthored PlanChangeRequest[] @relation("PlanChangeRequestRequester")
+  planChangeRequestsReviewed PlanChangeRequest[] @relation("PlanChangeRequestReviewer")
+
+  @@index([organizationId])
+  @@index([assignedPsychologistId])
+  @@index([status])
+}
 
 model UserRole {
   id     String   @id @default(cuid())
-  user   User     @relation(fields: [userId], references: [id])
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId String
   role   RoleType
+
+  @@unique([userId, role]) // evita duplicar el mismo rol para un usuario
 }
 
 model Organization {
-  id         String   @id @default(cuid())
-  name       String
-  rut        String   @unique
-  users      User[]
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id        String   @id @default(cuid())
+  name      String
+  rut       String   @unique
+  plan      OrgPlan  @default(TEAM) // controla capacidades (SOLO/TEAM/TRIAL)
+  users     User[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Back-relation: solicitudes de cambio de plan
+  planChangeRequests PlanChangeRequest[]
+
+  @@index([plan])
 }
 
 model Entry {
-  id         String   @id @default(cuid())
-  patient    User     @relation(fields: [patientId], references: [id])
-  patientId  String
-  score      Int
-  comment    String?
-  date       DateTime @default(now())
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id        String   @id @default(cuid())
+  patient   User     @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patientId String
+  score     Int
+  comment   String?
+  date      DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([patientId, date])
+  @@index([patientId, date]) // rendimiento para listados por fecha
+}
+
+/**
+ * ======================= AUDITORÍA =======================
+ */
+model AuditLog {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation("UserAuditLogs", fields: [userId], references: [id])
+  action      String
+  targetId    String?
+  description String?
+  createdAt   DateTime @default(now())
+}
+
+/**
+ * =================== BITÁCORA DE SESIÓN ===================
+ */
+model SessionNote {
+  id             String   @id @default(cuid())
+  patientId      String
+  psychologistId String
+  note           String
+  date           DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  patient      User @relation("PatientSessionNotes", fields: [patientId], references: [id], onDelete: Cascade)
+  psychologist User @relation("PsychologistSessionNotes", fields: [psychologistId], references: [id], onDelete: Cascade)
+}
+
+/**
+ * ============ DIAGNÓSTICOS Y VERSIONES ============
+ */
+model Diagnosis {
+  id             String   @id @default(cuid())
+  patientId      String
+  psychologistId String
+  text           String
+  archived       Boolean  @default(false) // solo uno activo por paciente
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  patient          User               @relation("PatientDiagnoses", fields: [patientId], references: [id], onDelete: Cascade)
+  psychologist     User               @relation("PsychologistDiagnoses", fields: [psychologistId], references: [id], onDelete: Cascade)
+  previousVersions DiagnosisArchive[]
+}
+
+model DiagnosisArchive {
+  id          String    @id @default(cuid())
+  diagnosisId String
+  diagnosis   Diagnosis @relation(fields: [diagnosisId], references: [id], onDelete: Cascade)
+  text        String
+  archivedAt  DateTime  @default(now())
+}
+
+/**
+ * ======================= RECORDATORIO =======================
+ */
+model Reminder {
+  id      String  @id @default(cuid())
+  userId  String  @unique
+  hour    Int
+  minute  Int
+  enabled Boolean @default(true)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/**
+ * ======= SOLICITUDES DE PLAN (OWNER -> SUPERADMIN) =======
+ */
+enum RequestStatus {
+  PENDING
+  APPROVED
+  DENIED
+}
+
+model PlanChangeRequest {
+  id String @id @default(cuid())
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  requestedById String
+  // ↙↙ Relación nombrada (lado opuesto en User.planChangeRequestsAuthored)
+  requestedBy   User   @relation("PlanChangeRequestRequester", fields: [requestedById], references: [id], onDelete: Cascade)
+
+  // Cambios solicitados
+  fromPlan OrgPlan
+  toPlan   OrgPlan
+  reason   String?
+  status   RequestStatus @default(PENDING)
+
+  reviewedById String?
+  // ↙↙ Relación nombrada (lado opuesto en User.planChangeRequestsReviewed)
+  reviewedBy   User?     @relation("PlanChangeRequestReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([organizationId])
 }

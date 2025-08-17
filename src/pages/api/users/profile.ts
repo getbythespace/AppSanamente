@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/prisma'
-import { supabase } from '../../../services/db'
+import { supabase } from '../../../lib/db'
 import { isValidRut } from '../../../utils/validateRut'
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {

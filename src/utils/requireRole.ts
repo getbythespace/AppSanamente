@@ -1,24 +1,55 @@
+import type { NextApiRequest, NextApiResponse, NextApiHandler } from 'next';
+import { prisma } from '@/lib/prisma';
+import { createClient } from '@supabase/supabase-js';
 
-import { prisma } from '../lib/prisma'
-import { supabase } from '../services/db'
+type Role = 'SUPERADMIN' | 'ADMIN' | 'ASSISTANT' | 'PSYCHOLOGIST' | 'PATIENT' | 'OWNER';
 
-export async function requireRole(req: any, allowedRoles: string[]) {
-  // Obtener el token de sesión de Supabase desde el header Auth
-  const token = req.headers.authorization?.replace('Bearer ', '')
-  if (!token) throw new Error('No autenticado')
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
-  // Validar el token y obtener el usuario
-  const { data: { user }, error } = await supabase.auth.getUser(token)
-  if (error || !user) throw new Error('No autenticado')
-
-  // Buscar el usuario x  id de Supabase
-  const dbUser = await prisma.user.findUnique({
-    where: { id: user.id },
-    include: { roles: true }
-  })
-  if (
-    !dbUser ||
-    !dbUser.roles.some((r: any) => allowedRoles.includes(r.role))
-  ) throw new Error('No autorizado')
-  return dbUser
+export interface AuthedRequest extends NextApiRequest {
+  auth?: {
+    userId: string;
+    roles: Role[];
+    organizationId?: string | null;
+  };
 }
+
+export function withRole(roles: Role[], handler: NextApiHandler) {
+  return async (req: AuthedRequest, res: NextApiResponse) => {
+    try {
+      const authHeader = req.headers.authorization || '';
+      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
+      if (!token) return res.status(401).json({ error: 'Missing bearer token' });
+
+      const { data, error } = await supabase.auth.getUser(token);
+      if (error || !data?.user) return res.status(401).json({ error: 'Invalid token' });
+
+      const user = await prisma.user.findUnique({
+        where: { id: data.user.id },
+        select: {
+          id: true,
+          organizationId: true,
+          roles: { select: { role: true } }
+        }
+      });
+
+      if (!user) return res.status(401).json({ error: 'User not found' });
+
+      const userRoles = user.roles.map(r => r.role as Role);
+      const allowed = roles.some(r => userRoles.includes(r));
+      if (!allowed) return res.status(403).json({ error: 'No autorizado' });
+
+      req.auth = { userId: user.id, roles: userRoles, organizationId: user.organizationId };
+      return handler(req, res);
+    } catch (e: any) {
+      return res.status(500).json({ error: e?.message || 'Auth error' });
+    }
+  };
+}
+
+// 👇 alias para compatibilidad
+export const requireRole = withRole;
+export default withRole;

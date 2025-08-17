@@ -1,4 +1,4 @@
-export * from './db';
+export * from '../lib/db';
 
 export const formatDate = (date: Date | string, locale: string = 'es-CL'): string => {
   return new Date(date).toLocaleDateString(locale, {

@@ -1,70 +1,72 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
-import { supabase } from "@/services/db";
+import { supabase } from "src/lib/db";
 
 export default function SetPassword() {
   const router = useRouter();
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
-  const [error, setError] = useState("");
+  const [formError, setFormError] = useState(""); 
+  const [tokenError, setTokenError] = useState(""); 
   const [success, setSuccess] = useState(false);
   const [ready, setReady] = useState(false);
 
-  //Almacena token y tipo de invitación
-  const [token, setToken] = useState<string | null>(null);
-  const [type, setType] = useState<string | null>(null);
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const hash = window.location.hash.replace("#", "");
+      const params = new URLSearchParams(hash);
+      const access_token = params.get("access_token");
+      const refresh_token = params.get("refresh_token");
+      const invite_type = params.get("type");
 
-useEffect(() => {
-  if (typeof window !== "undefined") {
-    const hash = window.location.hash.replace("#", "");
-    const params = new URLSearchParams(hash);
-    const access_token = params.get("access_token");
-    const refresh_token = params.get("refresh_token");
-    const invite_type = params.get("type");
-    setToken(access_token);
-    setType(invite_type);
-
-    console.log("access_token", access_token);
-    console.log("refresh_token", refresh_token);
-    console.log("invite_type", invite_type);
-
-    if (access_token && refresh_token && invite_type === "invite") {
-      supabase.auth.setSession({ access_token, refresh_token }).then(({ error }) => {
-        if (error) {
-          setError("Token inválido o expirado.");
-          console.error("Supabase setSession error:", error);
-        } else {
-          setReady(true);
-          //chequea que user esté seteado en supabase
-          supabase.auth.getUser().then(({ data, error }) => {
-            console.log("After setSession, user:", data?.user, error);
-          });
-        }
-      });
-    } else {
-      setError("Invitación no válida o expirada.");
-      setReady(true);
+      if (access_token && refresh_token && invite_type === "invite") {
+        supabase.auth.setSession({ access_token, refresh_token }).then(async ({ error }) => {
+          if (error) {
+            setTokenError("El enlace de invitación no es válido o ya expiró. Solicita ayuda a tu administrador.");
+            setReady(true);
+          } else {
+            setReady(true);
+          }
+        });
+      } else {
+        setTokenError("El enlace de invitación no es válido o ya expiró. Solicita ayuda a tu administrador.");
+        setReady(true);
+      }
     }
-  }
-}, []);
+  }, []);
 
-
+  const validatePassword = (pwd: string) => {
+    // Reglas de tu backend: mínimo 8, mayúscula, número, símbolo
+    if (pwd.length < 8) return "La contraseña debe tener al menos 8 caracteres.";
+    if (!/[A-Z]/.test(pwd)) return "Debe tener al menos una mayúscula.";
+    if (!/\d/.test(pwd)) return "Debe tener al menos un número.";
+    if (!/[!@#$%^&*]/.test(pwd)) return "Debe tener al menos un símbolo.";
+    return "";
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError("");
-    if (password.length < 8) {
-      setError("La contraseña debe tener al menos 8 caracteres.");
-      return;
-    }
+    setFormError("");
     if (password !== confirm) {
-      setError("Las contraseñas no coinciden.");
+      setFormError("Las contraseñas no coinciden.");
       return;
     }
-    // Actualiza la contraseña usando el token de invitación
+    const pwdValidation = validatePassword(password);
+    if (pwdValidation) {
+      setFormError(pwdValidation);
+      return;
+    }
+    // Si pasa las validaciones, recién ahí intentamos el updateUser
     const { error } = await supabase.auth.updateUser({ password });
     if (error) {
-      setError(error.message);
+      if (
+        error.message?.toLowerCase().includes("expired") ||
+        error.message?.toLowerCase().includes("invalid")
+      ) {
+        setTokenError("El enlace de invitación no es válido o ya expiró. Solicita ayuda a tu administrador.");
+      } else {
+        setFormError(error.message || "Error desconocido al establecer la contraseña.");
+      }
     } else {
       setSuccess(true);
       setTimeout(() => {
@@ -75,12 +77,12 @@ useEffect(() => {
 
   if (!ready) return <div>Cargando invitación...</div>;
 
-  if (error) return <div className="text-red-500">{error}</div>;
-
   return (
     <div className="max-w-md mx-auto p-8 mt-16 shadow-xl rounded-xl bg-white">
       <h1 className="text-2xl font-bold mb-4">Crea tu Contraseña</h1>
-      {!success ? (
+      {tokenError ? (
+        <div className="text-red-500 mt-2">{tokenError}</div>
+      ) : !success ? (
         <form onSubmit={handleSubmit}>
           <input
             type="password"
@@ -100,7 +102,7 @@ useEffect(() => {
             minLength={8}
             required
           />
-          {error && <div className="text-red-500 mb-2">{error}</div>}
+          {formError && <div className="text-red-500 mb-2">{formError}</div>}
           <button
             type="submit"
             className="btn btn-primary w-full p-2 bg-blue-600 text-white rounded hover:bg-blue-700"

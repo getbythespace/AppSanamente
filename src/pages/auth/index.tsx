@@ -1,15 +1,20 @@
-import { useEffect } from 'react'
-import { useRouter } from 'next/router'
-import Layout from '../../components/Layout'
+import React from 'react'
+import type { GetServerSideProps } from 'next'
+import Layout from '@/components/Layout'
 
-const AuthIndex = () => {
-  const router = useRouter()
-  useEffect(() => { router.replace('/auth/login') }, [router])
+export const getServerSideProps: GetServerSideProps = async () => {
+  return {
+    redirect: {
+      destination: '/auth/login',
+      permanent: false,
+    },
+  }
+}
+
+export default function HomePage() {
   return (
-    <Layout title="Autenticación">
-      <p className="text-center mt-20">Redirigiendo a login…</p>
+    <Layout title="Redirigiendo…">
+      <p className="text-center mt-20 text-gray-700">Redirigiendo al inicio de sesión…</p>
     </Layout>
   )
 }
-
-export default AuthIndex

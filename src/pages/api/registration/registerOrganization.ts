@@ -1,85 +1,90 @@
+
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from 'src/lib/prisma'
-import { RoleType } from '@prisma/client'
 import { createClient } from '@supabase/supabase-js'
 import { z } from 'zod'
-
-// ------ Validación con Zod ------
-const orgUserSchema = z.object({
-  name: z.string().min(2, { message: 'Nombre de organización requerido.' }),
-  rut: z.string().regex(/^\d{7,8}-[0-9kK]$/, { message: 'RUT inválido (ej: 12345678-9).' }),
-  firstName: z.string().min(2, { message: 'Nombre requerido.' }),
-  lastNameP: z.string().min(2, { message: 'Apellido paterno requerido.' }),
-  lastNameM: z.string().min(2, { message: 'Apellido materno requerido.' }),
-  email: z.string().email({ message: 'Email inválido.' }),
-  password: z.string()
-    .min(8, { message: 'La contraseña debe tener al menos 8 caracteres.' })
-    .regex(/(?=.*[A-Z])/, { message: 'Debe tener al menos una mayúscula.' })
-    .regex(/(?=.*\d)/, { message: 'Debe tener al menos un número.' })
-    .regex(/(?=.*[!@#$%^&*])/, { message: 'Debe tener al menos un símbolo.' }),
-  dob: z.string().refine((date) => {
-    const edad = (new Date().getTime() - new Date(date).getTime()) / (1000 * 60 * 60 * 24 * 365.25)
-    return edad >= 18
-  }, { message: 'Debes ser mayor de edad.' }),
-  isPsychologist: z.boolean().optional(),
-})
+import { $Enums } from '@prisma/client'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+const normalizeRut = (rut: string) =>
+  rut.trim().replace(/\./g, '').replace(/\s/g, '').toUpperCase()
+
+const rutRegex = /^\d{7,8}-[0-9K]$/i
+
+const schema = z.object({
+  // Organización
+  name: z.string().trim().min(2, 'Nombre de organización requerido.'),
+  orgRut: z.string()
+    .transform(normalizeRut)
+    .refine((v) => rutRegex.test(v), 'RUT de organización inválido (ej: 76.123.456-7).'),
+  // Usuario
+  email: z.string().trim().email('Email inválido.'),
+  password: z.string()
+    .min(8, 'La contraseña debe tener al menos 8 caracteres.')
+    .regex(/(?=.*[A-Z])/, 'Debe tener al menos una mayúscula.')
+    .regex(/(?=.*\d)/, 'Debe tener al menos un número.')
+    .regex(/(?=.*[!@#$%^&*])/, 'Debe tener al menos un símbolo.'),
+  firstName: z.string().trim().min(2, 'Nombre requerido.'),
+  lastNameP: z.string().trim().min(2, 'Apellido paterno requerido.'),
+  lastNameM: z.string().trim().min(2, 'Apellido materno requerido.'),
+  rut: z.string()
+    .transform(normalizeRut)
+    .refine((v) => rutRegex.test(v), 'RUT de usuario inválido (ej: 12.345.678-5).'),
+  dob: z.coerce.date().refine((d) => {
+    const age = (Date.now() - d.getTime()) / (1000 * 60 * 60 * 24 * 365.25)
+    return age >= 18
+  }, 'Debes ser mayor de edad.'),
+  isPsychologist: z.boolean().optional()
+})
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') return res.status(405).end()
+  const parsed = schema.safeParse(req.body)
+  if (!parsed.success) {
+    return res.status(422).json({ error: parsed.error.issues[0].message })
+  }
+
+  const { name, orgRut, email, password, firstName, lastNameP, lastNameM, rut, dob, isPsychologist } = parsed.data
 
   try {
-    // 1. Validar campos del body
-    const parsed = orgUserSchema.safeParse(req.body)
-    if (!parsed.success) {
-      return res.status(400).json({ error: parsed.error.issues[0].message })
-    }
-    const { name, rut, firstName, lastNameP, lastNameM, email, password, dob, isPsychologist } = parsed.data
+    // 1) Supabase signup
+    const redirectTo =
+      process.env.NEXT_PUBLIC_SITE_URL
+        ? `${process.env.NEXT_PUBLIC_SITE_URL}/auth/login`
+        : 'http://localhost:3000/auth/login'
 
-    // 2. Crear Organización (si ya existe ese rut, lanza error)
-    const org = await prisma.organization.create({
-      data: { name, rut }
-    })
-
-    // 3. Crear usuario admin en Supabase Auth
-    const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
+    const { data: signUp, error: sErr } = await supabase.auth.signUp({
       email,
       password,
-      email_confirm: false,
-      user_metadata: {
-        firstName,
-        lastNamePaternal: lastNameP,
-        lastNameMaternal: lastNameM,
-        rut,
-        dob,
-        organizationId: org.id,
-        isPsychologist: !!isPsychologist,
-        roles: isPsychologist ? [RoleType.ADMIN, RoleType.PSYCHOLOGIST] : [RoleType.ADMIN],
+      options: {
+        emailRedirectTo: redirectTo,
+        data: {
+          firstName,
+          lastNamePaternal: lastNameP,
+          lastNameMaternal: lastNameM,
+          rut, // usuario
+          dob: dob.toISOString().slice(0, 10),
+          isPsychologist: !!isPsychologist,
+          organizationId: null,
+          roles: !!isPsychologist ? ['OWNER','ADMIN','PSYCHOLOGIST'] : ['OWNER','ADMIN']
+        }
       }
     })
-
-    if (authError || !authUser?.user) {
-      // Rollback de la org creada si usuario falla en Supabase
-      await prisma.organization.delete({ where: { id: org.id } })
-      return res.status(400).json({ error: authError?.message || 'No se pudo crear usuario en Supabase Auth.' })
+    if (sErr || !signUp.user) {
+      return res.status(400).json({ error: sErr?.message || 'No se pudo registrar el usuario.' })
     }
-    const supabaseUserId = authUser.user.id
+    const supabaseUserId = signUp.user.id
 
-    // 4. Enviar invitación manual (correo de confirmación)
-    const { error: inviteError } = await supabase.auth.admin.inviteUserByEmail(email)
-    if (inviteError) {
-      // Rollback completo si la invitación falla
-      await supabase.auth.admin.deleteUser(supabaseUserId)
-      await prisma.organization.delete({ where: { id: org.id } })
-      return res.status(400).json({ error: inviteError.message })
-    }
-
-    // 5. Crear usuario en la base de datos Prisma
+    // 2) Prisma
     try {
+      const org = await prisma.organization.create({
+        data: { name, rut: orgRut } // plan = TEAM por default (schema)
+      })
+
       await prisma.user.create({
         data: {
           id: supabaseUserId,
@@ -87,35 +92,39 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           firstName,
           lastNamePaternal: lastNameP,
           lastNameMaternal: lastNameM,
-          rut,
-          dob: new Date(dob),
+          rut, // usuario
+          dob,
           isPsychologist: !!isPsychologist,
           organizationId: org.id,
           roles: {
-            create: isPsychologist
-              ? [{ role: RoleType.ADMIN }, { role: RoleType.PSYCHOLOGIST }]
-              : [{ role: RoleType.ADMIN }]
+            create: !!isPsychologist
+              ? [
+                  { role: $Enums.RoleType.OWNER },
+                  { role: $Enums.RoleType.ADMIN },
+                  { role: $Enums.RoleType.PSYCHOLOGIST }
+                ]
+              : [
+                  { role: $Enums.RoleType.OWNER },
+                  { role: $Enums.RoleType.ADMIN }
+                ]
           }
         }
       })
-    } catch (prismaError: any) {
-      // Rollback total si Prisma falla
-      await supabase.auth.admin.deleteUser(supabaseUserId)
-      await prisma.organization.delete({ where: { id: org.id } })
-      if (prismaError.code === 'P2002') {
-        return res.status(409).json({ error: 'El email, RUT o RUT de organización ya existen en la base de datos.' })
-      }
-      throw prismaError
-    }
 
-    // 6. Success
-    res.status(201).json({
-      ok: true,
-      organizationId: org.id,
-      userId: supabaseUserId,
-      message: 'Organización y usuario admin creados. Revisa tu correo para confirmar tu cuenta.'
-    })
+      return res.status(201).json({
+        ok: true,
+        organizationId: org.id,
+        userId: supabaseUserId,
+        message: 'Organización registrada. Revisa tu correo para confirmar tu cuenta.'
+      })
+    } catch (e: any) {
+      await supabase.auth.admin.deleteUser(supabaseUserId)
+      if (e?.code === 'P2002') {
+        return res.status(409).json({ error: 'RUT de organización o usuario/email ya existentes.' })
+      }
+      throw e
+    }
   } catch (err: any) {
-    res.status(400).json({ error: err.message || 'Error inesperado.' })
+    return res.status(500).json({ error: err?.message || 'Error inesperado.' })
   }
 }

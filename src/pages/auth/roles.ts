@@ -1,7 +1,7 @@
 
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from 'src/lib/prisma'
-import { supabase } from 'src/services/db'
+import { supabase } from 'src/lib/db'
 
 export async function withUser(
   req: NextApiRequest, res: NextApiResponse,

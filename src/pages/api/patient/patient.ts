@@ -1,56 +1,45 @@
-import type { NextApiRequest, NextApiResponse } from "next";
-import { requireRole } from "../../../utils/requireRole";
-import { prisma } from "src/lib/prisma";
+import type { NextApiRequest, NextApiResponse } from 'next'
+import { withApi } from '@/utils/apiHandler'
+import type { AppRole } from '@/types/roles'
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  try {
-    const user = await requireRole(req, ['PATIENT', 'PSYCHOLOGIST', 'ASSISTANT']);
-    const patientId = req.query.id as string;
+export default withApi(['GET','POST'], ['PATIENT','PSYCHOLOGIST','ASSISTANT'] as AppRole[],
+  async (req: NextApiRequest, res: NextApiResponse, { prisma, userId, roles }) => {
+    const idFromQuery = req.query.id as string | undefined
+    const idFromBody  = (req.body?.patientId as string | undefined)
+    const patientId = idFromQuery || idFromBody
+    if (!patientId) return res.status(400).json({ error: 'Id requerido' })
 
-    // Solo el paciente dueño, el psicólogo asignado o el asistente pueden crear/ver
-    if (user.roles.some((r: any) => r.role === "PATIENT") && user.id !== patientId) {
-      return res.status(403).json({ error: "Forbidden" });
+    const me = await prisma.user.findUnique({ where: { id: userId } })
+    if (!me) return res.status(401).json({ error: 'UNAUTHORIZED' })
+
+    // Reglas de acceso
+    if (roles.includes('PATIENT') && me.id !== patientId) {
+      return res.status(403).json({ error: 'Forbidden' })
     }
-
-    if (user.roles.some((r: any) => r.role === "PSYCHOLOGIST")) {
-      const patient = await prisma.user.findUnique({ where: { id: patientId } });
-      if (!patient) {
-        return res.status(404).json({ error: "Patient not found" });
-      }
-      if (user.id !== patient.assignedPsychologistId) {
-        return res.status(403).json({ error: "Forbidden" });
-      }
-    }
-
-    if (user.roles.some((r: any) => r.role === "ASSISTANT")) {
-      // Solo puede operar sobre pacientes de su organización
-      const patient = await prisma.user.findUnique({ where: { id: patientId } });
-      if (!patient || patient.organizationId !== user.organizationId) {
-        return res.status(403).json({ error: "Forbidden" });
+    if (roles.includes('PSYCHOLOGIST')) {
+      const patient = await prisma.user.findUnique({ where: { id: patientId } })
+      if (!patient || patient.assignedPsychologistId !== me.id) {
+        return res.status(403).json({ error: 'Forbidden' })
       }
     }
-
-    if (req.method === "POST") {
-      const { score, comment } = req.body;
-      const entry = await prisma.entry.create({
-        data: { patientId, score, comment },
-      });
-      return res.status(201).json(entry);
+    if (roles.includes('ASSISTANT')) {
+      const patient = await prisma.user.findUnique({ where: { id: patientId } })
+      if (!patient || patient.organizationId !== me.organizationId) {
+        return res.status(403).json({ error: 'Forbidden' })
+      }
     }
 
-    if (req.method === "GET") {
-      const entries = await prisma.entry.findMany({
-        where: { patientId },
-        orderBy: { date: "desc" },
-      });
-      return res.status(200).json(entries);
+    if (req.method === 'POST') {
+      const { score, comment } = req.body as { score: number; comment?: string }
+      const entry = await prisma.entry.create({ data: { patientId, score, comment } })
+      return res.status(201).json(entry)
     }
 
-    res.setHeader("Allow", ["GET","POST"]);
-    return res.status(405).end("Method Not Allowed");
-  } catch (err: any) {
-    res.status(403).json({ error: err.message });
+    // GET
+    const entries = await prisma.entry.findMany({
+      where: { patientId },
+      orderBy: { date: 'desc' },
+    })
+    return res.status(200).json(entries)
   }
-}
-
-//verificar permisos asistente hacia el paciente
+)

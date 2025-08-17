@@ -1,93 +1,95 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
-import { prisma } from 'src/lib/prisma'
-import { RoleType } from '@prisma/client'
+import { prisma } from '@/lib/prisma'
 import { createClient } from '@supabase/supabase-js'
 import { z } from 'zod'
-import { getSessionUser } from 'src/utils/auth-server' // backend
+import { RoleType } from '@prisma/client'
+import { getSessionUser } from '@/utils/auth-server'
+import { canInviteAssistant } from '@/utils/permissions'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-const userSchema = z.object({
+const normalizeRut = (rut: string) =>
+  rut.trim().replace(/\./g, '').replace(/\s/g, '').toUpperCase()
+
+const schema = z.object({
   firstName: z.string().min(2),
   lastNameP: z.string().min(2),
   lastNameM: z.string().min(2),
-  rut: z.string().regex(/^\d{7,8}-[0-9kK]$/, 'RUT inválido (ej: 12345678-9).'),
+  rut: z.string()
+    .transform(normalizeRut)
+    .refine(v => /^\d{7,8}-[0-9K]$/.test(v), 'RUT inválido (ej: 12.345.678-5).'),
   email: z.string().email(),
-  dob: z.string()
+  dob: z.coerce.date().optional()
 })
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== 'POST') return res.status(405).end()
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  //Validación de admin
+  // 1) Auth 
   const admin = await getSessionUser(req, res)
-  if (!admin || !admin.roles.some((r: any) => r.role === 'ADMIN')) {
-    return res.status(403).json({ error: 'Solo administradores pueden invitar psicólogos.' })
+  if (!admin) return res.status(401).json({ error: 'No autenticado' })
+
+  // 2) Permisos (bloquea plan SOLO y exige OWNER/ADMIN/SUPERADMIN)
+  if (!canInviteAssistant(admin)) {
+    return res.status(403).json({ error: 'No tienes permisos para invitar asistentes.' })
   }
-  const organizationId = admin.organizationId
-  if (!organizationId) {
+  if (!admin.organizationId) {
     return res.status(400).json({ error: 'No tienes organización asociada.' })
   }
 
-  //Validación de datos
-  const parsed = userSchema.safeParse(req.body)
+  // 3) Validación payload
+  const parsed = schema.safeParse(req.body)
   if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.issues[0].message })
+    return res.status(422).json({ error: parsed.error.issues[0].message })
   }
   const { firstName, lastNameP, lastNameM, rut, email, dob } = parsed.data
 
-  //Validar que la organización existe
-  const org = await prisma.organization.findUnique({ where: { id: organizationId } })
-  if (!org) {
-    return res.status(400).json({ error: 'Organización no existe' })
-  }
+  // 4) setpassword
+  const redirectTo =
+    process.env.NEXT_PUBLIC_SITE_URL
+      ? `${process.env.NEXT_PUBLIC_SITE_URL}/auth/set-password`
+      : 'http://localhost:3000/auth/set-password'
 
-  //Crear usuario en Supabase (Auth)
-  const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
+  const { data: invited, error: invErr } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
     data: {
       firstName,
       lastNamePaternal: lastNameP,
       lastNameMaternal: lastNameM,
       rut,
-      dob,
-      isPsychologist: true,
-      roles: [RoleType.PSYCHOLOGIST],
-      organizationId
+      dob: dob ? dob.toISOString().slice(0, 10) : null,
+      roles: ['ASSISTANT'],
+      organizationId: admin.organizationId
     },
-    redirectTo: "http://localhost:3000/auth/set-password"
-  });
-
-  if (authError || !authUser?.user) {
-    return res.status(400).json({ error: authError?.message || 'No se pudo invitar al usuario.' })
+    redirectTo
+  })
+  if (invErr || !invited?.user) {
+    return res.status(400).json({ error: invErr?.message || 'No se pudo enviar la invitación.' })
   }
-  const userId = authUser.user.id
 
-  //Crear usuario en Prisma y manejar rollback
+  // 5) Crear en Prisma
   try {
     await prisma.user.create({
       data: {
-        id: userId,
+        id: invited.user.id,
         email,
         firstName,
         lastNamePaternal: lastNameP,
         lastNameMaternal: lastNameM,
         rut,
-        dob: new Date(dob),
-        isPsychologist: true,
-        organizationId,
-        roles: { create: [{ role: RoleType.PSYCHOLOGIST }] }
+        dob: dob ?? null,
+        isPsychologist: false,
+        organizationId: admin.organizationId,
+        roles: { create: [{ role: RoleType.ASSISTANT }] }
       }
-    });
-    return res.status(201).json({ ok: true, userId })
-  } catch (prismaError: any) {
-    //Rollback en Supabase si Prisma falla
-    await supabaseAdmin.auth.admin.deleteUser(userId)
-    if (prismaError.code === 'P2002') {
-      return res.status(409).json({ error: 'Email o RUT duplicado.' })
-    }
-    return res.status(400).json({ error: prismaError.message || 'Error inesperado.' })
+    })
+  } catch (e: any) {
+    await supabaseAdmin.auth.admin.deleteUser(invited.user.id)
+    if (e?.code === 'P2002') return res.status(409).json({ error: 'Email o RUT ya existen.' })
+    throw e
   }
+
+  return res.status(201).json({ ok: true, userId: invited.user.id, message: 'Asistente invitado.' })
 }

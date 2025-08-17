@@ -1,95 +1,132 @@
+
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from 'src/lib/prisma'
-import { RoleType } from '@prisma/client'
 import { createClient } from '@supabase/supabase-js'
 import { z } from 'zod'
-import { getSessionUser } from 'src/utils/auth-server'
+import { RoleType } from '@prisma/client'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-const patientSchema = z.object({
+const normalizeRut = (rut: string) =>
+  rut.trim().replace(/\./g, '').replace(/\s/g, '').toUpperCase()
+
+const schema = z.object({
+  email: z.string().email(),
   firstName: z.string().min(2),
   lastNameP: z.string().min(2),
   lastNameM: z.string().min(2),
-  rut: z.string().regex(/^\d{7,8}-[0-9kK]$/, 'RUT inválido (ej: 12345678-9).'),
-  email: z.string().email(),
-  dob: z.string(),
-  assignedPsychologistId: z.string()
-  // Organization en base al token del admin
+  rut: z.string()
+    .transform(normalizeRut)
+    .refine((v) => /^\d{7,8}-[0-9K]$/.test(v), 'RUT inválido (ej: 12.345.678-5).'),
+  dob: z.coerce.date().optional(),
+  assignedPsychologistId: z.string().uuid().optional()
 })
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') return res.status(405).end()
 
-  //Validación de admin y organización
-  const admin = await getSessionUser(req, res)
-  if (!admin || !admin.roles.some((r: any) => r.role === 'ADMIN')) {
-    return res.status(403).json({ error: 'Solo administradores pueden invitar pacientes.' })
+  const authHeader = req.headers.authorization
+  if (!authHeader?.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Falta token Bearer' })
   }
-  const organizationId = admin.organizationId
-  if (!organizationId) {
+  const token = authHeader.slice(7)
+  const { data: tokenUser, error: tokenErr } = await supabaseAdmin.auth.getUser(token)
+  if (tokenErr || !tokenUser?.user) {
+    return res.status(401).json({ error: 'No autenticado' })
+  }
+
+  const admin = await prisma.user.findUnique({
+    where: { id: tokenUser.user.id },
+    include: { roles: true }
+  })
+  if (!admin) return res.status(401).json({ error: 'No autenticado' })
+
+  const roles = admin.roles.map(r => r.role)
+  const isOwnerOrAdmin = roles.includes(RoleType.OWNER) || roles.includes(RoleType.ADMIN)
+  if (!isOwnerOrAdmin) {
+    return res.status(403).json({ error: 'Solo OWNER/ADMIN pueden invitar pacientes.' })
+  }
+  if (!admin.organizationId) {
     return res.status(400).json({ error: 'No tienes organización asociada.' })
   }
 
-  //Validar datos
-  const parsed = patientSchema.safeParse(req.body)
+  const parsed = schema.safeParse(req.body)
   if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.issues[0].message })
+    return res.status(422).json({ error: parsed.error.issues[0].message })
   }
-  const { firstName, lastNameP, lastNameM, rut, dob, email, assignedPsychologistId } = parsed.data
+  const { email, firstName, lastNameP, lastNameM, rut, dob, assignedPsychologistId } = parsed.data
 
-  //Validar org y psicólogo
-  const org = await prisma.organization.findUnique({ where: { id: organizationId } })
-  if (!org) {
-    return res.status(400).json({ error: 'ID de organización inválido' })
+  let targetPsychologistId = assignedPsychologistId
+  if (!targetPsychologistId) {
+    const adminIsPsych = roles.includes(RoleType.PSYCHOLOGIST)
+    if (adminIsPsych) targetPsychologistId = admin.id
+    else return res.status(400).json({ error: 'Debes indicar assignedPsychologistId (el admin no es psicólogo).' })
   }
-  const psychologist = await prisma.user.findUnique({ where: { id: assignedPsychologistId } })
-  if (!psychologist || !psychologist.isPsychologist || psychologist.organizationId !== organizationId) {
-    return res.status(400).json({ error: 'ID de psicólogo inválido o no pertenece a tu organización' })
+
+  const psychologist = await prisma.user.findFirst({
+    where: {
+      id: targetPsychologistId,
+      organizationId: admin.organizationId,
+      roles: { some: { role: RoleType.PSYCHOLOGIST } }
+    }
+  })
+  if (!psychologist) {
+    return res.status(400).json({ error: 'Psicólogo asignado inválido o no pertenece a tu organización.' })
+  }
+
+  const redirectTo =
+    process.env.NEXT_PUBLIC_SITE_URL
+      ? `${process.env.NEXT_PUBLIC_SITE_URL}/auth/set-password`
+      : 'http://localhost:3000/auth/set-password'
+
+  const { data: invited, error: invErr } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
+    data: {
+      firstName,
+      lastNamePaternal: lastNameP,
+      lastNameMaternal: lastNameM,
+      rut,
+      dob: dob ? dob.toISOString().slice(0, 10) : null,
+      isPatient: true,
+      roles: [RoleType.PATIENT],
+      assignedPsychologistId: psychologist.id,
+      organizationId: admin.organizationId
+    },
+    redirectTo
+  })
+  if (invErr || !invited?.user) {
+    return res.status(400).json({ error: invErr?.message || 'No se pudo enviar la invitación.' })
   }
 
   try {
-    // Redirige a set password
-    const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
-      data: {
-        firstName,
-        lastNamePaternal: lastNameP,
-        lastNameMaternal: lastNameM,
-        rut,
-        dob,
-        isPatient: true,
-        roles: [RoleType.PATIENT],
-        assignedPsychologistId,
-        organizationId
-      },
-      redirectTo: "http://localhost:3000/auth/set-password"
-    });
-
-    if (authError || !authUser?.user) {
-      return res.status(400).json({ error: authError?.message || 'No se pudo invitar al usuario.' })
-    }
-    const userId = authUser.user.id
-
     await prisma.user.create({
       data: {
-        id: userId,
+        id: invited.user.id,
         email,
         firstName,
         lastNamePaternal: lastNameP,
         lastNameMaternal: lastNameM,
         rut,
-        dob: new Date(dob),
-        assignedPsychologistId,
-        organizationId,
+        dob: dob ?? null,
+        isPsychologist: false,
+        assignedPsychologistId: psychologist.id,
+        organizationId: admin.organizationId,
         roles: { create: [{ role: RoleType.PATIENT }] }
       }
-    });
-
-    res.status(201).json({ ok: true, userId });
-  } catch (err: any) {
-    return res.status(400).json({ error: err.message || 'Error inesperado.' })
+    })
+  } catch (e: any) {
+    await supabaseAdmin.auth.admin.deleteUser(invited.user.id)
+    if (e?.code === 'P2002') {
+      return res.status(409).json({ error: 'Email o RUT ya existen.' })
+    }
+    throw e
   }
+
+  return res.status(201).json({
+    ok: true,
+    userId: invited.user.id,
+    message: 'Invitación enviada.'
+  })
 }
