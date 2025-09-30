@@ -1,40 +1,61 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
-import { withApi } from '@/utils/apiHandler'
-import type { AppRole } from '@/types/roles'
+import { prisma } from '@/lib/prisma'
+import { getSessionUser } from '@/utils/auth-server'
 
-export default withApi(['DELETE'], ['SUPERADMIN'] as AppRole[],
-  async (req: NextApiRequest, res: NextApiResponse, { prisma, userId }) => {
-    const { id, motivo } = req.body as { id?: string; motivo?: string }
-    if (!id || !motivo) return res.status(400).json({ error: 'ID y motivo requeridos' })
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== 'DELETE') {
+    return res.status(405).json({ error: 'Método no permitido' })
+  }
 
-    const target = await prisma.user.findUnique({ where: { id }, include: { roles: true } })
-    if (target?.roles.some(r => r.role === 'SUPERADMIN')) {
-      return res.status(403).json({ error: 'No puedes borrar a otro superadmin' })
+  const authUser = await getSessionUser(req, res)
+  
+  if (!authUser) {
+    return res.status(401).json({ error: 'No autenticado' })
+  }
+
+  const isSuperAdmin = authUser.roles?.some((r: any) => r.role === 'SUPERADMIN')
+  if (!isSuperAdmin) {
+    return res.status(403).json({ error: 'Solo superadmins pueden eliminar usuarios' })
+  }
+
+  try {
+    const { userId } = req.body
+
+    if (!userId) {
+      return res.status(400).json({ error: 'userId es requerido' })
     }
 
-    if (target?.roles.some(r => r.role === 'ADMIN') && target.organizationId) {
-      const adminsCount = await prisma.userRole.count({
-        where: {
-          role: 'ADMIN',
-          user: { organizationId: target.organizationId, status: 'ACTIVE', id: { not: target.id } }
-        }
-      })
-      if (adminsCount === 0) {
-        return res.status(403).json({ error: 'No puedes borrar al único admin de la organización.' })
-      }
+    // Verificar que el usuario existe
+    const user = await prisma.user.findUnique({
+      where: { id: userId }
+    })
+
+    if (!user) {
+      return res.status(404).json({ error: 'Usuario no encontrado' })
     }
 
-    await prisma.user.delete({ where: { id } })
-
-    await prisma.auditLog.create({
+    // FIXED: Soft delete - cambiar status a DELETED (deletedAt no existe en schema)
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
       data: {
-        userId,
-        action: 'DELETE_USER',
-        targetId: id,
-        description: motivo,
+        status: 'DELETED'
       }
     })
 
-    return res.status(200).json({ ok: true })
+    // FIXED: Crear log de auditoría sin campo details (no existe en schema)
+    await prisma.auditLog.create({
+      data: {
+        action: 'USER_DELETED',
+        userId: authUser.id,
+        targetId: userId,
+        description: `User ${user.email} deleted`
+      }
+    })
+
+    return res.json({ message: 'Usuario eliminado exitosamente', user: updatedUser })
+
+  } catch (error) {
+    console.error('Error deleting user:', error)
+    return res.status(500).json({ error: 'Error interno del servidor' })
   }
-)
+}

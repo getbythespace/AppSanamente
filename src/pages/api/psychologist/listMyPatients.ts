@@ -4,21 +4,25 @@ import type { AppRole } from '@/types/roles'
 
 export default withApi(['GET'], ['PSYCHOLOGIST'] as AppRole[],
   async (_req: NextApiRequest, res: NextApiResponse, { prisma, userId }) => {
-    const me = await prisma.user.findUnique({ where: { id: userId } })
-    if (!me) return res.status(401).json({ error: 'UNAUTHORIZED' })
-
     const patients = await prisma.user.findMany({
       where: {
-        assignedPsychologistId: me.id,
-        roles: { some: { role: 'PATIENT' } },
-        status: 'ACTIVE'
+        status: 'ACTIVE',
+        assignedPsychologistId: userId,
+        roles: { some: { role: 'PATIENT' } }
       },
       select: {
-        id: true, firstName: true, lastNamePaternal: true, lastNameMaternal: true, dob: true, email: true,
-        entries: { select: { score: true, date: true }, orderBy: { date: 'desc' }, take: 1 }
-      }
+        id: true,
+        firstName: true,
+        lastNamePaternal: true,
+        lastNameMaternal: true,
+        email: true,
+        rut: true,
+        createdAt: true,
+        assignedPsychologistId: true
+      },
+      orderBy: [{ firstName: 'asc' }, { lastNamePaternal: 'asc' }]
     })
 
-    return res.status(200).json(patients)
+    return res.json({ ok: true, data: patients })
   }
 )

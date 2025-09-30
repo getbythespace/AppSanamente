@@ -1,32 +1,29 @@
-// middleware.ts
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs'
 
+const OPEN_PREFIXES = ['/auth', '/_next', '/public', '/.well-known', '/static', '/favicon.ico']
+const PROTECTED_PREFIXES = ['/app']
+
 export async function middleware(req: NextRequest) {
-  const res = NextResponse.next()
-  // No proteger auth ni público
-  const open = ['/auth', '/_next', '/public', '/.well-known']
-  if (open.some(p => req.nextUrl.pathname.startsWith(p))) return res
+  const { pathname } = req.nextUrl
 
-  // Proteger solo paneles
-  const protectedPrefixes = [
-    '/dashboard','/admin','/psychologist','/patient','/organization','/superadmin'
-  ]
-  if (!protectedPrefixes.some(p => req.nextUrl.pathname.startsWith(p))) return res
+  if (OPEN_PREFIXES.some(p => pathname.startsWith(p))) return NextResponse.next()
+  if (!PROTECTED_PREFIXES.some(p => pathname.startsWith(p))) return NextResponse.next()
 
+  const res = NextResponse.next()              
   const supabase = createMiddlewareClient({ req, res })
   const { data: { session } } = await supabase.auth.getSession()
+
   if (!session) {
     const url = new URL('/auth/login', req.url)
-    url.searchParams.set('next', req.nextUrl.pathname)
+    url.searchParams.set('next', pathname)
     return NextResponse.redirect(url)
   }
+
   return res
 }
 
 export const config = {
-  matcher: [
-    '/((?!api|_next|static|favicon.ico|.well-known).*)',
-  ],
+  matcher: ['/((?!api|_next|static|favicon.ico|.well-known).*)'],
 }

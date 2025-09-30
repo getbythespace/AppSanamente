@@ -1,16 +1,86 @@
-import supabase from '@/lib/supabaseClient'
+export async function getJson<T = any>(url: string): Promise<T> {
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+    })
 
-export async function fetcher(input: RequestInfo | URL, init: RequestInit = {}) {
-  const { data: { session } } = await supabase.auth.getSession()
-  const headers = new Headers(init.headers || {})
-  if (session?.access_token) {
-    headers.set('Authorization', `Bearer ${session.access_token}`)
+    if (!response.ok) {
+      if (response.status === 401) {
+        return { ok: false, error: 'No autenticado' } as T
+      }
+      const text = await response.text()
+      try {
+        const j = JSON.parse(text)
+        throw new Error(j.error || j.message || `Error ${response.status}`)
+      } catch {
+        throw new Error(text || `Error ${response.status}`)
+      }
+    }
+    return (await response.json()) as T
+  } catch (error) {
+    console.error('Error in getJson:', error)
+    throw error
   }
-  const res = await fetch(input.toString(), { ...init, headers, credentials: 'include' })
-  if (!res.ok) {
-    const text = await res.text().catch(() => '')
-    throw new Error(`HTTP ${res.status}: ${text || res.statusText}`)
+}
+
+export async function postJson<T = any>(url: string, body: any): Promise<T> {
+  const response = await fetch(url, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const text = await response.text()
+    try {
+      const j = JSON.parse(text)
+      throw new Error(j.error || j.message || `Error ${response.status}`)
+    } catch {
+      throw new Error(text || `Error ${response.status}`)
+    }
   }
-  const ct = res.headers.get('Content-Type') || ''
-  return ct.includes('application/json') ? res.json() : res.text()
+  return (await response.json()) as T
+}
+
+export async function putJson<T = any>(url: string, body: any): Promise<T> {
+  const response = await fetch(url, {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const text = await response.text()
+    try {
+      const j = JSON.parse(text)
+      throw new Error(j.error || j.message || `Error ${response.status}`)
+    } catch {
+      throw new Error(text || `Error ${response.status}`)
+    }
+  }
+  return (await response.json()) as T
+}
+
+export async function deleteRequest<T = any>(url: string): Promise<T> {
+  const response = await fetch(url, {
+    method: 'DELETE',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+  })
+  if (!response.ok) {
+    const text = await response.text()
+    try {
+      const j = JSON.parse(text)
+      throw new Error(j.error || j.message || `Error ${response.status}`)
+    } catch {
+      throw new Error(text || `Error ${response.status}`)
+    }
+  }
+  return (await response.json()) as T
+}
+
+export default async function fetcher(url: string) {
+  return getJson(url)
 }

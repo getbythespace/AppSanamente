@@ -1,36 +1,89 @@
-
-import type { NextApiRequest, NextApiResponse } from 'next'
+import { NextApiRequest, NextApiResponse } from 'next'
+import { createPagesServerClient } from '@supabase/auth-helpers-nextjs'
 import { prisma } from '@/lib/prisma'
-import { createClient } from '@supabase/supabase-js'
+import type { RoleType } from '@/types/roles'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY! 
-)
-
-function getAccessToken(req: NextApiRequest): string | undefined {
-  const auth = req.headers.authorization
-  if (auth?.startsWith('Bearer ')) return auth.slice(7)
-  
-  const cookie = req.headers.cookie || ''
-  const match = cookie.match(/(?:^|;\s*)sb-access-token=([^;]+)/)
-  return match ? decodeURIComponent(match[1]) : undefined
+export interface AuthenticatedUser {
+  id: string
+  email: string
+  firstName: string
+  lastNamePaternal: string
+  organizationId: string | null
+  activeRole: string | null
+  isPsychologist: boolean
+  roles: RoleType[]
 }
 
+export interface AuthResult { user: AuthenticatedUser }
+export interface AuthError { error: string; status: number }
 
-export async function getSessionUser(req: NextApiRequest, _res: NextApiResponse) {
-  const token = getAccessToken(req)
-  if (!token) return null
+export async function getSessionUser(
+  req: NextApiRequest,
+  res: NextApiResponse
+): Promise<AuthenticatedUser | null> {
+  try {
+    const supabase = createPagesServerClient({ req, res })
+    const { data, error } = await supabase.auth.getUser()
+    if (error || !data?.user?.email) return null
 
-  const { data, error } = await supabase.auth.getUser(token)
-  if (error || !data?.user?.id) return null
+    const user = await prisma.user.findUnique({
+      where: { email: data.user.email },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastNamePaternal: true,
+        organizationId: true,
+        activeRole: true,
+        isPsychologist: true,
+        status: true,
+        roles: { select: { role: true } },
+      }
+    })
 
-  const user = await prisma.user.findUnique({
-    where: { id: data.user.id },
-    include: {
-      roles: true,
-      organization: { select: { id: true, plan: true } }
+    if (!user || user.status === 'INACTIVE') return null
+
+    const dbRoles = user.roles.map(r => r.role as RoleType)
+    const allRoles: RoleType[] = [...dbRoles]
+    if (user.isPsychologist && !allRoles.includes('PSYCHOLOGIST')) allRoles.push('PSYCHOLOGIST')
+    if (user.activeRole && !allRoles.includes(user.activeRole as RoleType)) allRoles.push(user.activeRole as RoleType)
+    if (allRoles.length === 0) allRoles.push('PATIENT')
+
+    return {
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName,
+      lastNamePaternal: user.lastNamePaternal,
+      organizationId: user.organizationId,
+      activeRole: user.activeRole,
+      isPsychologist: user.isPsychologist,
+      roles: allRoles,
     }
-  })
-  return user
+  } catch (e) {
+    console.error('💥 [AUTH] Error getting session user:', e)
+    return null
+  }
+}
+
+export async function authenticateAndAuthorize(
+  req: NextApiRequest,
+  res: NextApiResponse,
+  allowedRoles: RoleType[]
+): Promise<AuthResult | AuthError> {
+  const user = await getSessionUser(req, res)
+  if (!user) return { error: 'No autenticado', status: 401 }
+
+  const hasRequiredRole = user.roles.some(role => allowedRoles.includes(role))
+  if (!hasRequiredRole) return { error: 'Acceso denegado', status: 403 }
+
+  return { user }
+}
+
+// Retrocompat
+export async function requireRole(
+  req: NextApiRequest,
+  res: NextApiResponse,
+  allowedRoles: RoleType[]
+) {
+  return authenticateAndAuthorize(req, res, allowedRoles)
 }

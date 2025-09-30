@@ -1,41 +1,53 @@
-// pages/api/users/me.ts
 import type { NextApiRequest, NextApiResponse } from 'next'
+import { createServerSupabaseClient } from '@supabase/auth-helpers-nextjs'
 import { prisma } from '@/lib/prisma'
-import { createClient } from '@supabase/supabase-js'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== 'GET') return res.status(405).json({ error: 'Method Not Allowed' })
+  if (req.method !== 'GET') {
+    return res.status(405).json({ error: 'Método no permitido' })
+  }
 
-  const authHeader = req.headers.authorization || ''
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : undefined
-  if (!token) return res.status(401).json({ error: 'Missing bearer token' })
+  try {
+    const supabase = createServerSupabaseClient({ req, res })
+    
+    const {
+      data: { session },
+      error: sessionError
+    } = await supabase.auth.getSession()
 
-  const { data, error } = await supabase.auth.getUser(token)
-  if (error || !data?.user) return res.status(401).json({ error: 'Invalid token' })
-
-  const user = await prisma.user.findUnique({
-    where: { id: data.user.id },
-    include: {
-      roles: true,
-      organization: { select: { id: true, name: true, plan: true } }
+    if (sessionError || !session?.user?.email) {
+      return res.status(401).json({ error: 'No autenticado' })
     }
-  })
 
-  if (!user) return res.status(404).json({ error: 'User not found' })
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email },
+      include: {
+        roles: {
+          select: {
+            role: true
+          }
+        }
+      }
+    })
 
-  return res.status(200).json({
-    id: user.id,
-    email: user.email,
-    roles: user.roles.map(r => r.role),
-    organizationId: user.organizationId,
-    organization: user.organization
-  })
+    if (!user) {
+      return res.status(404).json({ error: 'Usuario no encontrado' })
+    }
+
+    // FORMATO ORIGINAL QUE FUNCIONABA
+    return res.json({
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName,
+      lastNamePaternal: user.lastNamePaternal,
+      lastNameMaternal: user.lastNameMaternal,
+      organizationId: user.organizationId,
+      status: user.status,
+      roles: user.roles
+    })
+
+  } catch (error: any) {
+    console.error('Error in /api/users/me:', error)
+    return res.status(500).json({ error: 'Error interno del servidor' })
+  }
 }
-
-
-

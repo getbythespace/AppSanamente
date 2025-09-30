@@ -2,4 +2,13 @@
 const nextConfig = {
   reactStrictMode: true,
 }
-module.exports = nextConfig
+module.exports = {
+  async rewrites() {
+    return [
+      {
+        source: '/api/admin/userInvitations/:path*',
+        destination: '/api/admin/invitations/:path*',
+      },
+    ]
+  },
+}

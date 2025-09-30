@@ -4,7 +4,7 @@ import { createClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 import { RoleType } from '@prisma/client'
 import { getSessionUser } from '@/utils/auth-server'
-import { canInviteAssistant } from '@/utils/permissions'
+import { canInvitePsychologist } from '@/utils/permissions'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -18,7 +18,8 @@ const schema = z.object({
   firstName: z.string().min(2),
   lastNameP: z.string().min(2),
   lastNameM: z.string().min(2),
-  rut: z.string()
+  rut: z
+    .string()
     .transform(normalizeRut)
     .refine(v => /^\d{7,8}-[0-9K]$/.test(v), 'RUT inválido (ej: 12.345.678-5).'),
   email: z.string().email(),
@@ -33,8 +34,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!admin) return res.status(401).json({ error: 'No autenticado' })
 
   // 2) Permisos (bloquea plan SOLO y exige OWNER/ADMIN/SUPERADMIN)
-  if (!canInviteAssistant(admin)) {
-    return res.status(403).json({ error: 'No tienes permisos para invitar asistentes.' })
+  if (!canInvitePsychologist(admin)) {
+    return res.status(403).json({ error: 'No tienes permisos para invitar psicólogos.' })
   }
   if (!admin.organizationId) {
     return res.status(400).json({ error: 'No tienes organización asociada.' })
@@ -47,12 +48,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
   const { firstName, lastNameP, lastNameM, rut, email, dob } = parsed.data
 
-  // 4) setpassword
+  // 4) Link para setear contraseña
   const redirectTo =
     process.env.NEXT_PUBLIC_SITE_URL
       ? `${process.env.NEXT_PUBLIC_SITE_URL}/auth/set-password`
       : 'http://localhost:3000/auth/set-password'
 
+  // 5) Invitar en Supabase con rol PSYCHOLOGIST
   const { data: invited, error: invErr } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
     data: {
       firstName,
@@ -60,7 +62,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       lastNameMaternal: lastNameM,
       rut,
       dob: dob ? dob.toISOString().slice(0, 10) : null,
-      roles: ['ASSISTANT'],
+      roles: ['PSYCHOLOGIST'],
       organizationId: admin.organizationId
     },
     redirectTo
@@ -69,7 +71,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(400).json({ error: invErr?.message || 'No se pudo enviar la invitación.' })
   }
 
-  // 5) Crear en Prisma
+  // 6) Crear espejo en Prisma con rol PSYCHOLOGIST (sin OWNER ni ADMIN)
   try {
     await prisma.user.create({
       data: {
@@ -80,16 +82,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         lastNameMaternal: lastNameM,
         rut,
         dob: dob ?? null,
-        isPsychologist: false,
+        isPsychologist: true, // legacy flag; el rol es la verdad fuente
         organizationId: admin.organizationId,
-        roles: { create: [{ role: RoleType.ASSISTANT }] }
+        roles: { create: [{ role: RoleType.PSYCHOLOGIST }] }
       }
     })
   } catch (e: any) {
+    // rollback en Supabase si falla Prisma
     await supabaseAdmin.auth.admin.deleteUser(invited.user.id)
     if (e?.code === 'P2002') return res.status(409).json({ error: 'Email o RUT ya existen.' })
     throw e
   }
 
-  return res.status(201).json({ ok: true, userId: invited.user.id, message: 'Asistente invitado.' })
+  return res.status(201).json({ ok: true, userId: invited.user.id, message: 'Psicólogo invitado.' })
 }

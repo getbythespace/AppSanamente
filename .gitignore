@@ -57,3 +57,36 @@ comments_all.txt
 estructura.txt
 exportarEstructura.js
 export-comments.mjs
+
+scripts/*
+
+# Outputs adicionales de scripts de exportación
+estructura_y_contenido.txt
+exportarEstructuraYContenido.js
+exportarMicroEstructuras.js
+dump_micro/
+
+# Archivos temporales adicionales
+clear
+
+# Variantes adicionales de archivos de entorno (para mayor seguridad)
+.env.*
+
+# Archivos de sistema Windows (preventivo)
+Thumbs.db
+desktop.ini
+
+# Archivos de sistema macOS (ya tienes .DS_Store, pero adicional)
+.DS_Store?
+._*
+
+# Artefactos de despliegue (preventivo para plataformas como Vercel, Netlify)
+.vercel/
+.netlify/
+
+# Archivos de configuración de IDE adicionales (si usas otros)
+*~
+
+# Logs adicionales (si aparecen en el futuro)
+*.log
+lerna-debug.log*

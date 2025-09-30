@@ -1,21 +1,11 @@
-// src/hooks/useRoleRedirect.ts
 import { useEffect } from 'react'
 import { useRouter } from 'next/router'
-import { useCurrentUser } from '@/hooks/useCurrentUser' // export nombrado
+import useCurrentUser from '@/hooks/useCurrentUser'
+import type { RoleType } from '@/types/roles'
 
-type Role = 'SUPERADMIN' | 'OWNER' | 'ADMIN' | 'ASSISTANT' | 'PSYCHOLOGIST' | 'PATIENT'
-
-function normalizeRoles(roles: unknown): Role[] {
-  if (!Array.isArray(roles)) return []
-  return (roles as any[])
-    .map((r) => (typeof r === 'string' ? r : r?.role))
-    .filter(Boolean) as Role[]
-}
-
-// Ajusta estas rutas si en tu app usas otras (p. ej. '/admin/dashboard')
-const TARGET_BY_ROLE: Record<Role, string> = {
+const TARGET_BY_ROLE: Record<RoleType, string> = {
   SUPERADMIN: '/app/superadmin',
-  OWNER: '/app/admin',         // dueños suelen ver el panel admin de su org
+  OWNER: '/app/owner',
   ADMIN: '/app/admin',
   ASSISTANT: '/app/assistant',
   PSYCHOLOGIST: '/app/psychologist',
@@ -23,22 +13,22 @@ const TARGET_BY_ROLE: Record<Role, string> = {
 }
 
 export default function useRoleRedirect() {
-  const { user, loading } = useCurrentUser()
   const router = useRouter()
+  const { user, loading, unauthorized, didLoadOnce } = useCurrentUser()
+
+  useEffect(() => {
+    if (!loading && didLoadOnce && unauthorized) {
+      router.replace('/auth/login')
+    }
+  }, [loading, didLoadOnce, unauthorized, router])
 
   useEffect(() => {
     if (loading || !user) return
-
-    const roles = normalizeRoles((user as any).roles)
-    // Prioridad de redirección si el usuario tiene múltiples roles
-    const ordered: Role[] = ['SUPERADMIN','OWNER','ADMIN','PSYCHOLOGIST','ASSISTANT','PATIENT']
-    const primary = ordered.find((r) => roles.includes(r))
-    if (!primary) return
-
-    const target = TARGET_BY_ROLE[primary]
-    // Evita loops si ya estás en la sección correcta
-    if (router.asPath.startsWith(target)) return
-
-    router.replace(target)
-  }, [user, loading, router])
+    const roles = (user.roles || []) as RoleType[]
+    const active = (user.activeRole as RoleType) || (roles.find(r => r !== 'PATIENT') as RoleType) || (roles[0] as RoleType) || 'PATIENT'
+    const target = TARGET_BY_ROLE[active]
+    if (router.pathname === '/app' || router.pathname === '/app/') {
+      router.replace(target)
+    }
+  }, [loading, user, router])
 }

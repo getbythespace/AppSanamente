@@ -1,73 +1,74 @@
-import type { NextApiRequest, NextApiResponse } from 'next';
-import { withApi } from '@/utils/apiHandler';
-import { z } from 'zod';
-import type { AppRole } from '@/types/roles';
+import type { NextApiRequest, NextApiResponse } from 'next'
+import { prisma } from '@/lib/prisma'
+import { requireUser } from '@/pages/api/_utils/auth'
+import { RoleType } from '@prisma/client'
 
-const bodySchema = z.object({
-  psychologistId: z.string().min(10) // cuid()
-});
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'Method not allowed' })
+  const { id: patientId } = req.query as { id: string }
 
-export default withApi(
-  ['POST'],
-  ['ASSISTANT','ADMIN','PSYCHOLOGIST','SUPERADMIN'] as AppRole[],
-  async (req: NextApiRequest, res: NextApiResponse, { prisma, userId, roles }) => {
-    const patientId = req.query.id as string;
-    const parsed = bodySchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({ ok:false, error:'VALIDATION', issues: parsed.error.issues });
-    }
+  const authUser = await requireUser(req, res)
+  if (!authUser) return
 
-    const me = await prisma.user.findUnique({ where: { id: userId } });
-    if (!me) return res.status(401).json({ ok:false, error:'USER_NOT_FOUND' });
+  const me = await prisma.user.findUnique({
+    where: { id: authUser.id },
+    select: { id: true, organizationId: true, roles: { select: { role: true } } },
+  })
+  if (!me) return res.status(404).json({ ok: false, error: 'Usuario no encontrado' })
+  if (!me.organizationId) return res.status(400).json({ ok: false, error: 'No organization' })
 
-    const patient = await prisma.user.findUnique({ where: { id: patientId } });
-    if (!patient) return res.status(404).json({ ok:false, error:'PATIENT_NOT_FOUND' });
+  const roles = me.roles as Array<{ role: RoleType }>
+  const { mode, psychologistId } = req.body as { mode: 'claim' | 'assign'; psychologistId?: string }
 
-    const isPsyOnly = roles.includes('PSYCHOLOGIST') && !roles.some(r => ['ADMIN','ASSISTANT','SUPERADMIN'].includes(r));
-    if (isPsyOnly && parsed.data.psychologistId !== me.id) {
-      return res.status(403).json({ ok:false, error:'PSY_CANNOT_ASSIGN_OTHERS' });
-    }
+  // validar paciente dentro de mi org
+  const patient = await prisma.user.findFirst({
+    where: {
+      id: patientId,
+      organizationId: me.organizationId,
+      status: 'ACTIVE',
+      roles: { some: { role: RoleType.PATIENT } },
+    },
+    select: { id: true },
+  })
+  if (!patient) return res.status(404).json({ ok: false, error: 'Paciente no encontrado' })
 
-  
-    if (!roles.includes('SUPERADMIN')) {
-   
-      if ((patient.organizationId ?? null) !== (me.organizationId ?? null)) {
-        return res.status(403).json({ ok:false, error:'DIFFERENT_ORG' });
-      }
-    }
+  const existing = await prisma.patientAssignment.findFirst({
+    where: { organizationId: me.organizationId, patientId, status: 'ACTIVE' },
+  })
+  if (existing) return res.status(409).json({ ok: false, error: 'Paciente ya vinculado' })
 
-    // Validar que el psychologistId existe y es PSYCHOLOGIST
+  if (mode === 'claim') {
+    const isPsy = roles.some(r => r.role === RoleType.PSYCHOLOGIST)
+    if (!isPsy) return res.status(403).json({ ok: false, error: 'Solo psicólogos pueden auto-vincularse' })
+
+    await prisma.patientAssignment.create({
+      data: { organizationId: me.organizationId, patientId, psychologistId: me.id, status: 'ACTIVE' },
+    })
+    return res.json({ ok: true })
+  }
+
+  if (mode === 'assign') {
+    const isAssistant = roles.some(r => r.role === RoleType.ASSISTANT)
+    const isPsy = roles.some(r => r.role === RoleType.PSYCHOLOGIST)
+    if (!isAssistant && !isPsy) return res.status(403).json({ ok: false, error: 'Forbidden' })
+    if (!psychologistId) return res.status(400).json({ ok: false, error: 'psychologistId requerido' })
+
     const psy = await prisma.user.findFirst({
       where: {
-        id: parsed.data.psychologistId,
-        roles: { some: { role: 'PSYCHOLOGIST' } }
+        id: psychologistId,
+        organizationId: me.organizationId,
+        status: 'ACTIVE',
+        roles: { some: { role: RoleType.PSYCHOLOGIST } },
       },
-      select: { id:true, organizationId:true }
-    });
-    if (!psy) return res.status(400).json({ ok:false, error:'INVALID_PSYCHOLOGIST' });
+      select: { id: true },
+    })
+    if (!psy) return res.status(404).json({ ok: false, error: 'Psicólogo destino inválido' })
 
-    if (!roles.includes('SUPERADMIN')) {
-      // psicólogo debe estar en la misma org del actor
-      if ((psy.organizationId ?? null) !== (me.organizationId ?? null)) {
-        return res.status(403).json({ ok:false, error:'PSY_DIFFERENT_ORG' });
-      }
-    }
-
-    const updated = await prisma.user.update({
-      where: { id: patientId },
-      data: { assignedPsychologistId: psy.id }
-    });
-
-
-    await prisma.auditLog.create({
-      data: {
-        userId: me.id,
-        action: 'LINK_PSYCHOLOGIST',
-        targetId: updated.id,
-        description: `Vinculó paciente a psicólogo ${psy.id}`
-      }
-    });
-
-    res.json({ ok:true, data: { id: updated.id, assignedPsychologistId: updated.assignedPsychologistId } });
+    await prisma.patientAssignment.create({
+      data: { organizationId: me.organizationId, patientId, psychologistId, status: 'ACTIVE' },
+    })
+    return res.json({ ok: true })
   }
-);
+
+  return res.status(400).json({ ok: false, error: 'mode inválido' })
+}

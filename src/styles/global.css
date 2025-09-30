@@ -2,7 +2,54 @@
 @tailwind components;
 @tailwind utilities;
 
-/* IMPLEMENTAR NUEVOS ESTILOS */
+html, body, #__next { height: 100%; }
+
+/* === Fondo global con degradé claro/oscuro (para TODA la app) === */
+:root {
+  /* claro: rosado → peach → crema */
+  --app-bg: linear-gradient(180deg, #ffd3e2 0%, #ffe6d1 48%, #fff8ec 100%);
+}
+html.dark {
+  /* oscuro: verde petróleo → pizarra → casi negro */
+  --app-bg: linear-gradient(180deg, #064e3b 0%, #0f172a 50%, #020617 100%);
+}
+
+/* Aplica el fondo a toda la app */
 body {
-  @apply bg-gray-50; /* COLOR FONDO BASE (MODIFICAR) */
+  background: var(--app-bg);
+  background-attachment: fixed;
+  background-size: cover;
+  background-repeat: no-repeat;
+  @apply text-slate-900;
+}
+html.dark body { @apply text-slate-100; }
+
+/* --------- Lo que ya tenías (se mantiene) --------- */
+.slider::-webkit-slider-thumb {
+  appearance: none;
+  height: 20px; width: 20px; border-radius: 50%;
+  background: #3b82f6; cursor: pointer;
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.3);
+}
+.slider::-moz-range-thumb {
+  height: 20px; width: 20px; border-radius: 50%;
+  background: #3b82f6; cursor: pointer; border: none;
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.3);
+}
+
+@supports(padding: max(0px)) {
+  .safe-px {
+    padding-left: max(env(safe-area-inset-left), 1rem);
+    padding-right: max(env(safe-area-inset-right), 1rem);
+  }
+  .safe-pt { padding-top: max(env(safe-area-inset-top), 1rem); }
+  .safe-pb { padding-bottom: max(env(safe-area-inset-bottom), 1rem); }
+}
+
+/* Day Picker */
+.rdp {
+  --rdp-accent-color: #10b981;
+  --rdp-accent-background-color: rgba(16,185,129,.18);
+  /* respeta claro/oscuro según el html.dark */
+  color-scheme: light dark;
 }
